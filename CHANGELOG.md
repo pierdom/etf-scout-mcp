@@ -34,6 +34,13 @@ produced them.
   `symbol`'s quote. Behaviour unchanged; this was a documentation gap, not a bug —
   locked in with a test so a future change doesn't silently start (or stop)
   cross-validating without an explicit decision.
+- `portfolio_xray` now rejects a negative `weight` with a `ValueError` naming the
+  offending ISIN. Verified in production that a mix of `weight: 0` and `weight: -10`
+  produced mathematically-valid-looking but semantically nonsensical output — the
+  negative holding ended up silently contributing 100% of the aggregate (double-negative
+  division: `-10 / (0 + -10) = 1.0`) while the zero-weight holding contributed nothing.
+
+  Zero is still allowed (contributes nothing, harmless).
 
 ### Phase 3 — new tools
 - New tool `portfolio_xray(holdings: list[{isin, weight}])`: aggregated look-through

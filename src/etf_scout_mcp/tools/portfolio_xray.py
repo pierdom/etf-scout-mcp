@@ -61,8 +61,15 @@ def register(mcp: FastMCP) -> None:
         be understated — see concentration_approximate (always true today).
 
         holdings: list of {isin, weight}, e.g.
-                  [{"isin": "IE00B4L5Y983", "weight": 60}, {"isin": "IE00BK5BQT80", "weight": 40}]
+                  [{"isin": "IE00B4L5Y983", "weight": 60}, {"isin": "IE00BK5BQT80", "weight": 40}].
+                  Each weight must be >= 0.
         """
+        negative = [h.isin for h in holdings if h.weight < 0]
+        if negative:
+            raise ValueError(
+                f"weight must be >= 0 for every holding; got a negative weight for: {negative}"
+            )
+
         profiles = await asyncio.gather(
             *[fetch_profile(h.isin) for h in holdings], return_exceptions=True
         )
