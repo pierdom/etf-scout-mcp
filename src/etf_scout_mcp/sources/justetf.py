@@ -145,12 +145,38 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+def _round_money(value: Any) -> float | None:
+    """Return None for NaN/None, else round to 4 decimal places (monetary fields)."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+        return None if math.isnan(f) else round(f, 4)
+    except (TypeError, ValueError):
+        return None
+
+
 def _ter_to_decimal(pct: Any) -> float | None:
     """Convert TER from percent (library) to decimal (our convention).
     0.20 (percent) → 0.002 (decimal, 20 bps).
     """
     f = _safe_float(pct)
     return round(f / 100, 8) if f is not None else None
+
+
+# justETF renders missing data as one of these placeholder strings rather than
+# omitting the field — normalise them to None so callers never see them leak through.
+_PLACEHOLDER_STRINGS = {"-", "n/a", "–"}
+
+
+def _normalise(value: Any) -> str | None:
+    """Normalise a scraped string field: map justETF's placeholder tokens to None."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s or s.lower() in _PLACEHOLDER_STRINGS:
+        return None
+    return s
 
 
 # ---------------------------------------------------------------------------
@@ -176,39 +202,39 @@ async def fetch_profile(isin: str) -> dict[str, Any]:
         _log.info("ok fn=get_etf_overview isin=%s latency=%.3fs", isin, time.monotonic() - t0)
         return {
             "isin": ov["isin"],
-            "name": ov.get("name"),
-            "description": ov.get("description"),
-            "index": ov.get("index"),
-            "investment_focus": ov.get("investment_focus"),
+            "name": _normalise(ov.get("name")),
+            "description": _normalise(ov.get("description")),
+            "index": _normalise(ov.get("index")),
+            "investment_focus": _normalise(ov.get("investment_focus")),
             # fund_size from library is in EUR millions → convert to EUR
-            "fund_size_eur": (ov["fund_size_eur"] * 1_000_000) if ov.get("fund_size_eur") else None,
+            "fund_size_eur": _round_money(ov["fund_size_eur"] * 1_000_000) if ov.get("fund_size_eur") else None,
             "ter": _ter_to_decimal(ov.get("ter")),
-            "replication": ov.get("replication"),
-            "distribution_policy": ov.get("distribution_policy"),
-            "distribution_frequency": ov.get("distribution_frequency"),
-            "fund_currency": ov.get("fund_currency"),
+            "replication": _normalise(ov.get("replication")),
+            "distribution_policy": _normalise(ov.get("distribution_policy")),
+            "distribution_frequency": _normalise(ov.get("distribution_frequency")),
+            "fund_currency": _normalise(ov.get("fund_currency")),
             "currency_hedged": ov.get("currency_hedged"),
-            "fund_domicile": ov.get("fund_domicile"),
-            "fund_provider": ov.get("fund_provider"),
-            "legal_structure": ov.get("legal_structure"),
+            "fund_domicile": _normalise(ov.get("fund_domicile")),
+            "fund_provider": _normalise(ov.get("fund_provider")),
+            "legal_structure": _normalise(ov.get("legal_structure")),
             "sustainability": ov.get("sustainability"),
             "volatility_1y": _safe_float(ov.get("volatility_1y")),
             "inception_date": _parse_date(ov.get("inception_date")),
             "holdings_date": _parse_date(ov.get("holdings_date")),
             "top_holdings": [
                 {
-                    "name": h["name"],
-                    "isin": h.get("isin"),
+                    "name": _normalise(h["name"]),
+                    "isin": _normalise(h.get("isin")),
                     "weight": _safe_float(h["percentage"]),
                 }
                 for h in (ov.get("top_holdings") or [])
             ],
             "countries": [
-                {"name": c["name"], "weight": _safe_float(c["percentage"])}
+                {"name": _normalise(c["name"]), "weight": _safe_float(c["percentage"])}
                 for c in (ov.get("countries") or [])
             ],
             "sectors": [
-                {"name": s["name"], "weight": _safe_float(s["percentage"])}
+                {"name": _normalise(s["name"]), "weight": _safe_float(s["percentage"])}
                 for s in (ov.get("sectors") or [])
             ],
         }
@@ -225,14 +251,14 @@ def _row_to_summary(isin: str, row: Any) -> dict[str, Any]:
     inc = row.get("inception_date")
     return {
         "isin": isin,
-        "name": row.get("name"),
-        "ticker": row.get("ticker"),
+        "name": _normalise(row.get("name")),
+        "ticker": _normalise(row.get("ticker")),
         "fund_provider": _extract_provider(row.get("name")),
-        "fund_domicile": str(row.get("domicile_country")) if row.get("domicile_country") else None,
-        "fund_size_eur": (float(row["size"]) * 1_000_000) if row.get("size") and not math.isnan(float(row["size"])) else None,
+        "fund_domicile": _normalise(row.get("domicile_country")),
+        "fund_size_eur": _round_money(float(row["size"]) * 1_000_000) if row.get("size") and not math.isnan(float(row["size"])) else None,
         "ter": _ter_to_decimal(row.get("ter")),
-        "replication": str(row.get("replication")) if row.get("replication") else None,
-        "distribution_policy": str(row.get("dividends")) if row.get("dividends") else None,
+        "replication": _normalise(row.get("replication")),
+        "distribution_policy": _normalise(row.get("dividends")),
         "currency_hedged": bool(row.get("hedged")),
         "sustainability": bool(row.get("is_sustainable")),
         "inception_date": inc.date().isoformat() if hasattr(inc, "date") else None,
