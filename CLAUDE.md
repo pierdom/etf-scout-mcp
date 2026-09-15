@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-`etf-scout-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server for ETF research. It exposes 6 MCP tools backed by three data sources: **justETF** (scraping), **Yahoo Finance** (yfinance + curl_cffi), and **OpenFIGI** (REST API).
+`etf-scout-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server for ETF research. It exposes 7 MCP tools backed by three data sources: **justETF** (scraping), **Yahoo Finance** (yfinance + curl_cffi), and **OpenFIGI** (REST API).
 
 ## Commands
 
@@ -51,10 +51,10 @@ src/etf_scout_mcp/
 │   └── openfigi.py    # httpx async; OpenFIGI exchange listings; handles 429 rate-limit
 └── tools/
     ├── etf_profile.py, search.py, etf_compare.py
-    ├── quote.py, history.py, etf_listings.py
+    ├── quote.py, batch_quote.py, history.py, etf_listings.py
 ```
 
-**The 6 MCP tools:** `get_etf_profile`, `search_etfs`, `compare_etfs`, `get_quote`, `get_history`, `get_etf_listings`.
+**The 7 MCP tools:** `get_etf_profile`, `search_etfs`, `compare_etfs`, `get_quote`, `get_quotes`, `get_history`, `get_etf_listings`.
 
 **Request flow:** MCP client → `server.py` (tool dispatch) → `tools/` (input validation) → `cache.py` (@cached check) → `sources/` (network fetch) → Pydantic model → client.
 
@@ -74,7 +74,8 @@ src/etf_scout_mcp/
 | `ETF_SCOUT_MCP_HTTP_BEARER_TOKEN` | — | Required when transport is `http` |
 | `ETF_SCOUT_MCP_HTTP_HOST` / `_HTTP_PORT` | `127.0.0.1` / `8765` | HTTP bind |
 | `ETF_SCOUT_MCP_CACHE` | `~/.cache/etf-scout-mcp/cache.db` | SQLite path |
-| `ETF_SCOUT_MCP_CACHE_TTL_QUOTE` / `_PROFILE` / `_HISTORY` | `300` / `86400` / `3600` | Per-type TTLs in seconds |
+| `ETF_SCOUT_MCP_CACHE_ENABLED` | `true` | `false` disables the cache entirely |
+| `ETF_SCOUT_MCP_CACHE_TTL_QUOTE` / `_PROFILE` / `_HISTORY` | `60` / `86400` / `3600` | Per-type TTLs in seconds |
 | `ETF_SCOUT_MCP_LOG_LEVEL` | `INFO` | Standard Python log level |
 | `OPENFIGI_API_KEY` | — | Optional; raises rate limit and adds `mic_code` to listings |
 

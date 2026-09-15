@@ -14,9 +14,12 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ ./src/
 RUN uv sync --frozen --no-dev --no-editable
 
-# Non-root user
-RUN useradd --system --no-create-home etfmcp \
-    && mkdir -p /data && chown etfmcp /data
+# Non-root user — uid/gid pinned (not left to useradd's auto-assignment) so
+# docker-compose.yml's `user: "1000:1000"` and volume ownership stay stable
+# across rebuilds instead of drifting with the base image.
+RUN groupadd --system --gid 1000 etfmcp \
+    && useradd --system --no-create-home --uid 1000 --gid 1000 etfmcp \
+    && mkdir -p /data && chown etfmcp:etfmcp /data
 USER etfmcp
 
 # Persist OIDCProxy's encrypted client store / DCR registrations across container
