@@ -26,12 +26,15 @@ def register(mcp: FastMCP) -> None:
     async def find_alternatives(isin: str, limit: int = 10) -> AlternativesResult:
         """Find ETFs tracking the same index as a given fund, ranked cheapest-first by TER.
 
-        Matches on the source fund's index name as a substring against other funds'
-        names on justETF (the same free-text match search_etfs' `query` param uses) —
-        a best-effort text match, not a guaranteed same-index match; check each result's
-        own profile if precision matters. Ranked by TER only — justETF doesn't publish
-        tracking-difference data, so this isn't a full total-cost-of-ownership ranking
-        (see `ranked_by`).
+        Matches on the source fund's index name via justETF's own free-text search
+        (the same `query` mechanism search_etfs' `query` param uses) — this is
+        justETF's search, not a literal substring match on the fund name: it can
+        return funds tracking a related-but-different index (e.g. searching "MSCI
+        World" has been observed to also return MSCI ACWI funds). Best-effort, not a
+        guaranteed same-index match — check each result's own `index` field (via
+        get_etf_profile) if precision matters. Ranked by TER only — justETF doesn't
+        publish tracking-difference data, so this isn't a full total-cost-of-ownership
+        ranking (see `ranked_by`).
 
         Use this when comparing a fund you're considering against cheaper ways to get
         the same exposure, e.g. before choosing which MSCI World tracker to buy.

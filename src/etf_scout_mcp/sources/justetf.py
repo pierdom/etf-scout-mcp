@@ -433,7 +433,10 @@ async def fetch_screener(
 
     max_ter is decimal (0.002 = 0.20%). min_fund_size_eur is in EUR.
     Returns are percentages (24.76 means +24.76%).
-    query maps to justETF's &query= parameter (accepts ISIN or name substring).
+    query maps to justETF's &query= parameter (accepts an ISIN or a fund/index
+    name query via justETF's own search — not a literal substring match on the
+    fund name; observed to also surface a related-but-different index, e.g.
+    "MSCI World" can return MSCI ACWI funds too).
     provider is a post-filter by fund provider (e.g. "iShares", "Amundi").
     sort_by: 'ter' | 'fund_size' | 'return_1y' | 'return_3y' | 'return_5y'.
     exclude_leveraged drops funds whose name matches a leverage heuristic

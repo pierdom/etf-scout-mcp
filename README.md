@@ -73,7 +73,7 @@ Filter the justETF screener. The primary discovery tool.
 | `max_ter` | `float \| None` | `None` | Decimal, e.g. `0.002` = 20bps |
 | `min_fund_size_eur` | `float \| None` | `None` | e.g. `1_000_000_000` = €1B |
 | `distribution` | `str \| None` | `None` | `Accumulating` \| `Distributing` |
-| `query` | `str \| None` | `None` | Free-text name substring or ISIN |
+| `query` | `str \| None` | `None` | ISIN, or a free-text query via justETF's own search — not a literal name substring match; can surface a related-but-different index (e.g. "MSCI World" can return MSCI ACWI funds too) |
 | `provider` | `str \| None` | `None` | e.g. `iShares`, `Vanguard` |
 | `currency` | `str \| None` | `None` | Fund base currency |
 | `currency_hedged` | `bool \| None` | `None` | |
@@ -407,9 +407,12 @@ find_alternatives(isin="IE00B4L5Y983", limit=3)
   }
 ```
 
-Matches on the source fund's `index` name as a substring against other funds' names
-(the same free-text match `search_etfs`'s `query` uses) — best-effort text matching,
-not a guaranteed same-index match. `ranked_by` is always `"ter"` — justETF doesn't
+Matches on the source fund's `index` name via justETF's own search (the same `query`
+mechanism `search_etfs` uses) — this is justETF's search, not a literal substring
+match on the fund name: it can return funds tracking a related-but-different index
+(observed: searching "MSCI World" also returns MSCI ACWI funds). Best-effort, not a
+guaranteed same-index match — check each result's own `index` field (via
+`get_etf_profile`) if precision matters. `ranked_by` is always `"ter"` — justETF doesn't
 publish tracking-difference data (see CHANGELOG), so this isn't a full
 total-cost-of-ownership ranking, only a cheapest-advertised-cost one. `error` is set
 (with an empty `alternatives` list) when the ISIN fails to resolve or justETF has no
