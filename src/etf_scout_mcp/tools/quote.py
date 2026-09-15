@@ -29,6 +29,18 @@ class Quote(BaseModel):
         None,
         description="Set whenever price is null: what failed and what to try instead.",
     )
+    bid: float | None = Field(
+        None,
+        description="Only populated when include_book=True and source='yahoo'. Yahoo's book "
+        "data for European-listed ETFs can be stale outside continuous auction windows.",
+    )
+    ask: float | None = Field(None, description="See bid.")
+    spread_bps: float | None = Field(
+        None, description="(ask - bid) / mid * 10000. Null whenever bid or ask is null."
+    )
+    market_state: str | None = Field(
+        None, description="e.g. 'REGULAR', 'CLOSED', 'PRE'. Only populated when include_book=True and source='yahoo'."
+    )
 
 
 def _round(value: float | None) -> float | None:
@@ -60,11 +72,16 @@ async def _fetch_gettex(isin: str, resolved_symbol: str) -> dict:
     return await asyncio.wait_for(asyncio.to_thread(_inner), timeout=20.0)
 
 
-async def fetch_one(symbol: str | None, isin: str | None) -> Quote:
+async def fetch_one(symbol: str | None, isin: str | None, include_book: bool = False) -> Quote:
     """Fetch a single quote, resolving ISIN→ticker if needed, with Gettex fallback.
 
     Never raises for a resolvable-but-priceless lookup — returns a Quote with
     price=None, as_of=None, source="error", and a human-readable error instead.
+
+    include_book: when True and the quote resolves via Yahoo, also fetches
+    bid/ask/spread_bps/market_state via a second, heavier Yahoo request
+    (sources.yahoo.fetch_quote_book). A book-fetch failure never fails the
+    quote itself — bid/ask/etc just stay null.
     """
     if not symbol and not isin:
         raise ValueError("Provide at least one of: symbol, isin")
@@ -104,7 +121,13 @@ async def fetch_one(symbol: str | None, isin: str | None) -> Quote:
         yahoo_error = f"Yahoo Finance request failed for {resolved_symbol!r}: {exc}"
 
     if yahoo_error is None:
-        return Quote(source="yahoo", isin=isin, error=None, **data)  # type: ignore[arg-type]
+        book: dict = {}
+        if include_book:
+            try:
+                book = await yahoo.fetch_quote_book(resolved_symbol)
+            except Exception:
+                book = {}  # never fail an otherwise-successful quote over book data
+        return Quote(source="yahoo", isin=isin, error=None, **data, **book)  # type: ignore[arg-type]
 
     if not isin:
         return Quote(symbol=resolved_symbol, isin=isin, source="error", error=yahoo_error)
@@ -133,7 +156,9 @@ async def fetch_one(symbol: str | None, isin: str | None) -> Quote:
 
 def register(mcp: FastMCP) -> None:
     @mcp.tool()
-    async def get_quote(symbol: str | None = None, isin: str | None = None) -> Quote:
+    async def get_quote(
+        symbol: str | None = None, isin: str | None = None, include_book: bool = False
+    ) -> Quote:
         """Return the latest price quote for an ETF.
 
         Accepts a Yahoo Finance ticker, an ISIN, or both. When only an ISIN
@@ -150,5 +175,11 @@ def register(mcp: FastMCP) -> None:
                 Optional when isin is provided.
         isin:   ISIN, e.g. 'IE00B4L5Y983'. Used for ticker auto-resolution
                 and as Gettex fallback when Yahoo fails.
+        include_book: When True, also fetch bid/ask/spread_bps/market_state —
+                a second, heavier Yahoo request than the base quote (only
+                fired when this is True). Only populated when the quote
+                resolves via Yahoo; Gettex-sourced quotes never carry book
+                data. Yahoo's book data for European-listed ETFs can be
+                stale outside continuous auction windows — treat accordingly.
         """
-        return await fetch_one(symbol, isin)
+        return await fetch_one(symbol, isin, include_book=include_book)

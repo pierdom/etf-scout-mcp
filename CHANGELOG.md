@@ -20,6 +20,11 @@ produced them.
   matched by index-name substring against other funds' names, ranked cheapest-first by
   TER (`ranked_by: "ter"` — no tracking-difference data available, so not a full
   cost-of-ownership ranking). Excludes the source ISIN from its own results.
+- `get_quote`/`get_quotes` gain `include_book: bool = False` (FEAT-11) —
+  `bid`/`ask`/`spread_bps`/`market_state` via a second, heavier Yahoo request
+  (`.info`, not `.fast_info`), opt-in rather than default given the doubled request
+  cost and observed stale book data for European-listed ETFs outside continuous
+  auction windows. Never populated for Gettex-sourced quotes.
 - FEAT-5 (tracking difference) and FEAT-6 (`compare_costs`) dropped from this phase —
   not sourceable from the pinned scraper, its current upstream HEAD, or justETF's
   public profile page HTML. FEAT-8 (Spanish-resident fields) dropped for the same

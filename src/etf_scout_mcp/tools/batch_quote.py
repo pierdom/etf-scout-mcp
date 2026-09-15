@@ -15,10 +15,10 @@ class QuoteResult(Quote):
     )
 
 
-async def _safe_fetch(symbol: str | None, isin: str | None, requested: str) -> QuoteResult:
+async def _safe_fetch(symbol: str | None, isin: str | None, requested: str, include_book: bool) -> QuoteResult:
     """Wrap fetch_one so a single failure doesn't abort the whole batch."""
     try:
-        q = await fetch_one(symbol, isin)
+        q = await fetch_one(symbol, isin, include_book=include_book)
         return QuoteResult(requested=requested, **q.model_dump())
     except Exception as exc:
         fallback_symbol = symbol or isin or "unknown"
@@ -32,6 +32,7 @@ def register(mcp: FastMCP) -> None:
     async def get_quotes(
         symbols: list[str] | None = None,
         isins: list[str] | None = None,
+        include_book: bool = False,
     ) -> list[QuoteResult]:
         """Return the latest price quotes for multiple ETFs in a single call.
 
@@ -51,15 +52,18 @@ def register(mcp: FastMCP) -> None:
         isins:   ISINs, e.g. ['IE00B4L5Y983', 'IE00BK5BQT80']. Each is
                  auto-resolved to a Yahoo ticker via OpenFIGI (Xetra preferred).
                  Can be combined with symbols.
+        include_book: When True, also fetch bid/ask/spread_bps/market_state for
+                 every row — one extra Yahoo request per row (not free), only
+                 populated for rows that resolve via Yahoo. See get_quote.
         """
         if not symbols and not isins:
             raise ValueError("Provide at least one of: symbols, isins")
 
         coros = []
         for sym in (symbols or []):
-            coros.append(_safe_fetch(sym, None, requested=sym))
+            coros.append(_safe_fetch(sym, None, requested=sym, include_book=include_book))
         for isin in (isins or []):
-            coros.append(_safe_fetch(None, isin, requested=isin))
+            coros.append(_safe_fetch(None, isin, requested=isin, include_book=include_book))
 
         results = await asyncio.gather(*coros)
         return list(results)

@@ -126,6 +126,40 @@ async def fetch_quote(symbol: str) -> dict[str, Any]:
     return await asyncio.to_thread(_inner)
 
 
+@cached(ttl_key="quote")
+async def fetch_quote_book(symbol: str) -> dict[str, Any]:
+    """Fetch bid/ask/spread/market-state for *symbol* from Yahoo Finance.
+
+    Separate from fetch_quote deliberately: this uses yfinance's full `.info`
+    property, a second, heavier Yahoo request than `.fast_info` (not a free
+    extra field) — only called when a caller opts in via include_book=True.
+    Yahoo's Level-1 book data for European-listed ETFs has been observed
+    stale/unreliable outside continuous auction windows (bid == ask while
+    regularMarketPrice differs) — treat these fields accordingly.
+
+    Returns a flat dict with keys: bid, ask, spread_bps, market_state. All
+    nullable — never fabricated when Yahoo doesn't return a value.
+    """
+    def _inner() -> dict[str, Any]:
+        t = _ticker(symbol)
+        info = _fetch_with_retry(lambda: t.info)
+        bid = _round_money(info.get("bid"))
+        ask = _round_money(info.get("ask"))
+        spread_bps = None
+        if bid is not None and ask is not None and bid > 0:
+            mid = (bid + ask) / 2
+            if mid > 0:
+                spread_bps = round((ask - bid) / mid * 10_000, 4)
+        return {
+            "bid": bid,
+            "ask": ask,
+            "spread_bps": spread_bps,
+            "market_state": info.get("marketState"),
+        }
+
+    return await asyncio.to_thread(_inner)
+
+
 @cached(ttl_key="history")
 async def fetch_history(
     symbol: str,

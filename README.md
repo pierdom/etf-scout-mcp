@@ -199,6 +199,7 @@ live quote (EUR, European trading hours) when Yahoo fails and an `isin` was give
 |---|---|---|
 | `symbol` | `str \| None` | `None` — Yahoo ticker, e.g. `'IWDA.AS'` |
 | `isin` | `str \| None` | `None` — used for auto-resolution and Gettex fallback |
+| `include_book` | `bool` | `False` — fetch `bid`/`ask`/`spread_bps`/`market_state` too (see below) |
 
 At least one of `symbol`/`isin` is required. Returns `Quote`:
 
@@ -206,7 +207,8 @@ At least one of `symbol`/`isin` is required. Returns `Quote`:
 get_quote(symbol="IWDA.AS")
 → {"symbol": "IWDA.AS", "isin": null, "currency": "USD", "price": 102.34,
    "previous_close": 101.9, "open": 101.95, "day_high": 102.5, "day_low": 101.8,
-   "volume": 1234567, "as_of": "2026-09-15", "source": "yahoo", "error": null}
+   "volume": 1234567, "as_of": "2026-09-15", "source": "yahoo", "error": null,
+   "bid": null, "ask": null, "spread_bps": null, "market_state": null}
 
 get_quote(symbol="NOTAREALTICKER.XX")
 → {"symbol": "NOTAREALTICKER.XX", "isin": null, "currency": null, "price": null,
@@ -220,6 +222,20 @@ fund AUM already lives in `get_etf_profile`/`compare_etfs`/`search_etfs` as
 `fund_size_eur`; duplicating it here for a Yahoo-sourced tool would mean an extra
 justETF call per quote for data that already has a home.
 
+`include_book=True` fetches `bid`/`ask`/`spread_bps`/`market_state` via a **second,
+heavier** Yahoo request (`yfinance`'s full `.info`, not the lightweight `fast_info` the
+base quote uses) — opt-in, not default, because it roughly doubles Yahoo request volume
+per quote. Only populated when the quote resolves via Yahoo (never for a Gettex-sourced
+quote), and Yahoo's book data for European-listed ETFs has been observed stale/
+unreliable outside continuous auction windows — treat it accordingly, don't assume it's
+a live tradeable spread. A book-fetch failure never fails the underlying quote; the
+book fields just stay `null`.
+
+```
+get_quote(symbol="VWCE.DE", include_book=True)
+→ {..., "source": "yahoo", "bid": 165.8, "ask": 165.86, "spread_bps": 3.6, "market_state": "REGULAR"}
+```
+
 ### `get_quotes`
 
 Same as `get_quote`, batched and concurrent.
@@ -228,6 +244,7 @@ Same as `get_quote`, batched and concurrent.
 |---|---|---|
 | `symbols` | `list[str] \| None` | `None` |
 | `isins` | `list[str] \| None` | `None` |
+| `include_book` | `bool` | `False` — applies to every row; one extra Yahoo request per row |
 
 Returns `list[QuoteResult]` — `Quote` plus `requested: str` (the exact input string
 this row corresponds to). **Ordering:** all `symbols` rows first (in the order given),

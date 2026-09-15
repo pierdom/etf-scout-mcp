@@ -8,7 +8,7 @@ from etf_scout_mcp.tools.quote import Quote
 
 
 async def test_requested_field_matches_input_positionally(monkeypatch, mcp_client):
-    async def fake_fetch_one(symbol: str | None, isin: str | None) -> Quote:
+    async def fake_fetch_one(symbol: str | None, isin: str | None, include_book: bool = False) -> Quote:
         return Quote(
             symbol=symbol or isin,
             isin=isin,
@@ -40,7 +40,7 @@ async def test_requested_field_matches_input_positionally(monkeypatch, mcp_clien
 
 
 async def test_single_failure_does_not_abort_batch(monkeypatch, mcp_client):
-    async def flaky_fetch_one(symbol: str | None, isin: str | None) -> Quote:
+    async def flaky_fetch_one(symbol: str | None, isin: str | None, include_book: bool = False) -> Quote:
         if symbol == "BROKEN.XX":
             raise RuntimeError("boom")
         return Quote(symbol=symbol, source="yahoo", price=1.0, as_of="2026-09-15", error=None)
