@@ -4,8 +4,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Any
 
@@ -179,6 +180,56 @@ def _normalise(value: Any) -> str | None:
     return s
 
 
+def _today() -> str:
+    """The current UTC date, captured once per upstream fetch (not per cache
+    read) so data_as_of reflects when the data was actually scraped."""
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _annualise(cumulative_pct: float | None, years: float) -> float | None:
+    """Convert a cumulative return over *years* to an annualised (CAGR) one.
+    (1y is skipped by callers — cumulative and annualised are identical when
+    years == 1, so a separate field would just duplicate return_1y.)
+    """
+    if cumulative_pct is None:
+        return None
+    try:
+        factor = (1 + cumulative_pct / 100) ** (1 / years)
+    except (ValueError, ZeroDivisionError):
+        return None
+    return round((factor - 1) * 100, 4)
+
+
+# Best-effort leverage detection from fund name — justETF's screener has no
+# leverage column (only a strategy filter, "long-only" vs "short & leveraged",
+# and leveraged-long products are still categorised "long-only"). Never
+# treated as ground truth: leverage_factor is only set on a confident numeric
+# match, never fabricated as 1.0 for an undetected fund.
+_LEVERAGE_FACTOR_PATTERN = re.compile(r"(?<![\w.])(\d(?:\.\d)?)\s*x\b", re.IGNORECASE)
+_LEVERAGE_KEYWORDS = ("leveraged", "short & leveraged", "daily short", "ultra short", "ultra long", "inverse")
+
+
+def _detect_leverage_factor(name: str | None) -> float | None:
+    if not name:
+        return None
+    match = _LEVERAGE_FACTOR_PATTERN.search(name)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def _is_leveraged(name: str | None) -> bool:
+    if not name:
+        return False
+    if _detect_leverage_factor(name) is not None:
+        return True
+    name_lower = name.lower()
+    return any(kw in name_lower for kw in _LEVERAGE_KEYWORDS)
+
+
 # ---------------------------------------------------------------------------
 # Public async API
 # ---------------------------------------------------------------------------
@@ -190,6 +241,8 @@ async def fetch_profile(isin: str) -> dict[str, Any]:
 
     Returns a dict suitable for building an EtfProfile model.
     TER is decimal (0.002 = 0.20%). fund_size_eur is in EUR (not millions).
+    Also merges in return_1y/3y/5y (+ 3y/5y annualised) from the screener
+    scrape (fetch_summary) — the profile scrape itself has no return fields.
     """
     def _inner() -> dict[str, Any]:
         _ensure_log_handler()
@@ -240,21 +293,41 @@ async def fetch_profile(isin: str) -> dict[str, Any]:
         }
 
     try:
-        return await asyncio.wait_for(asyncio.to_thread(_inner), timeout=45.0)
+        profile = await asyncio.wait_for(asyncio.to_thread(_inner), timeout=45.0)
     except asyncio.TimeoutError:
         _log.warning("timeout fn=get_etf_overview isin=%s after 45s", isin)
         raise RuntimeError(f"justETF request timed out for {isin}") from None
 
+    profile["data_as_of"] = _today()
 
-def _row_to_summary(isin: str, row: Any) -> dict[str, Any]:
+    try:
+        summary = await fetch_summary(isin)
+    except Exception as exc:
+        _log.warning("error fn=fetch_summary(for profile returns) isin=%s error=%r", isin, exc)
+        summary = None
+
+    profile["return_1y"] = summary.get("return_1y") if summary else None
+    profile["return_3y"] = summary.get("return_3y") if summary else None
+    profile["return_5y"] = summary.get("return_5y") if summary else None
+    profile["return_3y_annualised_pct"] = _annualise(profile["return_3y"], 3)
+    profile["return_5y_annualised_pct"] = _annualise(profile["return_5y"], 5)
+
+    return profile
+
+
+def _row_to_summary(isin: str, row: Any, data_as_of: str) -> dict[str, Any]:
     """Convert a load_overview DataFrame row to a summary dict."""
     inc = row.get("inception_date")
+    return_3y = _safe_float(row.get("last_three_years"))
+    return_5y = _safe_float(row.get("last_five_years"))
+    name = row.get("name")
     return {
         "isin": isin,
-        "name": _normalise(row.get("name")),
+        "name": _normalise(name),
         "ticker": _normalise(row.get("ticker")),
-        "fund_provider": _extract_provider(row.get("name")),
+        "fund_provider": _extract_provider(name),
         "fund_domicile": _normalise(row.get("domicile_country")),
+        "fund_currency": _normalise(row.get("currency")),
         "fund_size_eur": _round_money(float(row["size"]) * 1_000_000) if row.get("size") and not math.isnan(float(row["size"])) else None,
         "ter": _ter_to_decimal(row.get("ter")),
         "replication": _normalise(row.get("replication")),
@@ -263,9 +336,13 @@ def _row_to_summary(isin: str, row: Any) -> dict[str, Any]:
         "sustainability": bool(row.get("is_sustainable")),
         "inception_date": inc.date().isoformat() if hasattr(inc, "date") else None,
         "return_1y": _safe_float(row.get("last_year")),
-        "return_3y": _safe_float(row.get("last_three_years")),
-        "return_5y": _safe_float(row.get("last_five_years")),
+        "return_3y": return_3y,
+        "return_5y": return_5y,
+        "return_3y_annualised_pct": _annualise(return_3y, 3),
+        "return_5y_annualised_pct": _annualise(return_5y, 5),
         "volatility_1y": _safe_float(row.get("last_year_volatility")),
+        "leverage_factor": _detect_leverage_factor(name),
+        "data_as_of": data_as_of,
     }
 
 
@@ -283,7 +360,7 @@ async def fetch_summary(isin: str) -> dict[str, Any] | None:
         _log.info("ok fn=load_overview isin=%s rows=%d latency=%.3fs", isin, len(df), time.monotonic() - t0)
         if df.empty:
             return None
-        return _row_to_summary(df.index[0], df.iloc[0])
+        return _row_to_summary(df.index[0], df.iloc[0], _today())
 
     try:
         return await asyncio.wait_for(asyncio.to_thread(_inner), timeout=45.0)
@@ -315,7 +392,9 @@ async def fetch_screener(
     replication: str | None = None,
     sustainability: bool | None = None,
     sort_by: str | None = None,
+    exclude_leveraged: bool = False,
     limit: int = 20,
+    offset: int = 0,
 ) -> list[dict[str, Any]]:
     """Query the justETF screener and return matching ETFs.
 
@@ -324,6 +403,9 @@ async def fetch_screener(
     query maps to justETF's &query= parameter (accepts ISIN or name substring).
     provider is a post-filter by fund provider (e.g. "iShares", "Amundi").
     sort_by: 'ter' | 'fund_size' | 'return_1y' | 'return_3y' | 'return_5y'.
+    exclude_leveraged drops funds whose name matches a leverage heuristic
+    (justETF's screener has no leverage column — see _is_leveraged).
+    offset/limit paginate the (post-filtered, sorted) result set.
     """
     # Map friendly strings to justETF query values
     _asset_map = {
@@ -387,15 +469,18 @@ async def fetch_screener(
             df = df[df["replication"].astype(str).str.lower().str.contains(replication.lower(), na=False)]
         if sustainability is not None:
             df = df[df["is_sustainable"] == sustainability]
+        if exclude_leveraged:
+            df = df[~df["name"].apply(_is_leveraged)]
 
         # Sort
         if sort_by is not None and sort_by in _SORT_COLS:
             col, ascending = _SORT_COLS[sort_by]
             df = df.sort_values(col, ascending=ascending, na_position="last")
 
-        df = df.head(limit)
+        df = df.iloc[offset : offset + limit]
 
-        return [_row_to_summary(isin, row) for isin, row in df.iterrows()]
+        data_as_of = _today()
+        return [_row_to_summary(isin, row, data_as_of) for isin, row in df.iterrows()]
 
     try:
         return await asyncio.wait_for(asyncio.to_thread(_inner), timeout=60.0)

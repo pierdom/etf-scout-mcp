@@ -47,7 +47,7 @@ def test_row_to_summary_normalises_placeholder_fields():
         "last_five_years": None,
         "last_year_volatility": 10.6,
     }
-    summary = _row_to_summary("IE00B4L5Y983", row)
+    summary = _row_to_summary("IE00B4L5Y983", row, "2026-09-15")
 
     assert summary["ticker"] is None
     assert summary["fund_domicile"] is None
@@ -55,6 +55,7 @@ def test_row_to_summary_normalises_placeholder_fields():
     assert summary["distribution_policy"] is None
     assert summary["name"] == "iShares Core MSCI World UCITS ETF"
     assert summary["fund_size_eur"] == 50_000_000_000.0
+    assert summary["data_as_of"] == "2026-09-15"
 
 
 async def test_fetch_profile_normalises_distribution_frequency(monkeypatch, isolated_cache):

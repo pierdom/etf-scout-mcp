@@ -14,7 +14,9 @@ def register(mcp: FastMCP) -> None:
 
         Sourced from justETF. Use this for in-depth research on one fund:
         TER, replication method, distribution policy, fund size, domicile,
-        top holdings, and full country/sector breakdowns.
+        1/3/5-year returns (cumulative, plus 3y/5y annualised CAGR), top
+        holdings, and full country/sector breakdowns. data_as_of reports
+        when this was scraped.
 
         Use search_etfs instead if you need to discover or filter ETFs.
         Use get_quote for a live price. Use compare_etfs to see multiple funds

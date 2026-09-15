@@ -22,16 +22,25 @@ def register(mcp: FastMCP) -> None:
         replication: str | None = None,
         sustainability: bool | None = None,
         sort_by: str | None = None,
+        exclude_leveraged: bool = False,
         limit: int = 20,
+        offset: int = 0,
     ) -> list[EtfSummary]:
         """Search and filter ETFs using the justETF screener.
 
         This is the headline discovery tool — use it when you need to find
         ETFs matching specific criteria.
 
-        Results include TER, fund size, replication, distribution policy,
-        and 1/3/5-year returns. Use get_etf_profile to drill into a result,
-        or compare_etfs to put two or more side by side.
+        Results include TER, fund size, fund currency, replication,
+        distribution policy, and 1/3/5-year returns (cumulative — see
+        return_3y_annualised_pct/return_5y_annualised_pct for CAGR; figures
+        are in the fund's own reporting currency as shown on justETF, not
+        converted). Use get_etf_profile to drill into a result, or
+        compare_etfs to put two or more side by side.
+
+        Known limitation: distribution_frequency is not available at this
+        screener level (only get_etf_profile scrapes it) — adding it here
+        would mean one extra justETF scrape per row.
 
         asset_class:  'equity', 'bonds', 'commodities', 'real_estate',
                       'money_market', 'precious_metals', 'currency'
@@ -52,7 +61,13 @@ def register(mcp: FastMCP) -> None:
         sort_by:      'ter' (cheapest first) | 'fund_size' (largest first) |
                       'return_1y' | 'return_3y' | 'return_5y' (best first).
                       Default: justETF's fund-size-descending order.
+        exclude_leveraged: Drop funds whose name matches a leverage heuristic
+                      (regex on the name — justETF's screener has no leverage
+                      column, and leveraged-long products are not excluded by
+                      any other filter here). Best-effort, not authoritative;
+                      see leverage_factor on each row.
         limit:        Maximum number of results to return (default 20)
+        offset:       Number of results to skip, for pagination (default 0)
         """
         rows = await fetch_screener(
             asset_class=asset_class,
@@ -67,6 +82,8 @@ def register(mcp: FastMCP) -> None:
             replication=replication,
             sustainability=sustainability,
             sort_by=sort_by,
+            exclude_leveraged=exclude_leveraged,
             limit=limit,
+            offset=offset,
         )
         return [EtfSummary(**r) for r in rows]
