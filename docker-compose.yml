@@ -3,21 +3,66 @@ name: etf_scout_mcp
 services:
   etf-scout-mcp:
     container_name: etf-scout-mcp
+    # Pinned to a tag, not `:edge` — `edge` moves with every push to main and
+    # can silently change scraper/behaviour under you. Bump deliberately.
     image: ghcr.io/pierdom/etf-scout-mcp:edge
+
+    # --- Build from source instead of pulling the published image ---
+    # Uncomment to build locally (e.g. testing an unreleased change) and
+    # comment out `image:` above (Compose prefers `build:` when both are set,
+    # but keeping both public is confusing — pick one).
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+
     restart: unless-stopped
+
+    # All ETF_SCOUT_MCP_*/OIDC_*/OPENFIGI_API_KEY vars live in .env — see
+    # .env.example. Keeping them out of `environment:` here means secrets
+    # never end up committed alongside this file.
     env_file: .env
-    ports:
-      - "8765:8765"
-    volumes:
-      - ~/Docker/etf-scout-mcp/data:/data
+
     environment:
       ETF_SCOUT_MCP_TRANSPORT: http
       ETF_SCOUT_MCP_HTTP_HOST: 0.0.0.0
       ETF_SCOUT_MCP_HTTP_PORT: 8765
-      ETF_SCOUT_MCP_HTTP_BEARER_TOKEN: ${ETF_SCOUT_MCP_HTTP_BEARER_TOKEN}
       ETF_SCOUT_MCP_CACHE: /data/cache.db
-      ETF_SCOUT_MCP_LOG_LEVEL: ${ETF_SCOUT_MCP_LOG_LEVEL:-INFO}
-      ETF_SCOUT_MCP_CACHE_TTL_QUOTE: ${ETF_SCOUT_MCP_CACHE_TTL_QUOTE:-300}
-      ETF_SCOUT_MCP_CACHE_TTL_PROFILE: ${ETF_SCOUT_MCP_CACHE_TTL_PROFILE:-86400}
-      ETF_SCOUT_MCP_CACHE_TTL_HISTORY: ${ETF_SCOUT_MCP_CACHE_TTL_HISTORY:-3600}
-      OPENFIGI_API_KEY: ${OPENFIGI_API_KEY:-}
+      # OIDCProxy stores its encrypted client/token store under platformdirs,
+      # which resolves against XDG_DATA_HOME. Pin it into the mounted volume
+      # below — otherwise every redeploy wipes DCR registrations and forces
+      # every client to re-auth. See README "Gotchas".
+      XDG_DATA_HOME: /data
+
+    # Explicit uid:gid matching the image's pinned non-root user (Dockerfile
+    # `useradd --uid 1000 --gid 1000`) — not left to Compose/the image
+    # default, so the named volume below is writable by the process that
+    # actually needs it, not root.
+    user: "1000:1000"
+
+    ports:
+      # host:container. If nginx-proxy-manager (or any reverse proxy) is on
+      # a different Docker network than this container, publish against the
+      # proxy's network-gateway IP instead of 0.0.0.0 — e.g.
+      # "172.20.0.1:8765:8765" — so the port isn't exposed on every interface
+      # the host has.
+      - "8765:8765"
+
+    volumes:
+      # Named volume, not a host bind mount — sidesteps the uid/gid mismatch
+      # footgun documented in the README (a bind mount first created under a
+      # different image ends up root-owned, breaking cache/log writes for a
+      # non-root process). Holds cache.db, calls.log, and the OIDCProxy store.
+      - etf-scout-mcp-data:/data
+
+    healthcheck:
+      # No public HTTP health endpoint to assert on (MCP streamable-http
+      # expects a session-bearing request, not a bare GET) — this only
+      # confirms the process is accepting TCP connections on its port.
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8765), timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  etf-scout-mcp-data:
