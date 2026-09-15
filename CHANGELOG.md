@@ -6,6 +6,17 @@ produced them.
 
 ## Unreleased
 
+### Phase 3 — new tools
+- New tool `portfolio_xray(holdings: list[{isin, weight}])`: aggregated look-through
+  country/sector/single-name exposure across a set of ETF holdings. Country/sector data
+  is complete; single-name concentration is approximate (justETF only discloses each
+  fund's top 10 holdings) — always flagged via `concentration_approximate`. A holding
+  that fails to resolve lands in `errors`, never a silent drop.
+- FEAT-5 (tracking difference) and FEAT-6 (`compare_costs`) dropped from this phase —
+  not sourceable from the pinned scraper, its current upstream HEAD, or justETF's
+  public profile page HTML. FEAT-8 (Spanish-resident fields) dropped for the same
+  reason.
+
 ### Phase 2 — schema honesty
 - `search_etfs`/`compare_etfs` rows gain `fund_currency`, `data_as_of`,
   `return_3y_annualised_pct`, `return_5y_annualised_pct`, and `leverage_factor`.
