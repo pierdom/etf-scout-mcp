@@ -81,6 +81,9 @@ def register(mcp: FastMCP) -> None:
                     XrayError(isin=h.isin, error=f"Failed to fetch {h.isin!r} from justETF: {profile}")
                 )
                 continue
+            if profile is None:
+                errors.append(XrayError(isin=h.isin, error=f"ISIN {h.isin!r} not found on justETF."))
+                continue
             resolved += 1
             fund_weight = h.weight / total_weight
 

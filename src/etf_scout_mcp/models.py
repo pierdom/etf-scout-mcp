@@ -62,6 +62,10 @@ class EtfProfile(BaseModel):
     countries: list[Allocation] = Field(default_factory=list)
     sectors: list[Allocation] = Field(default_factory=list)
 
+    error: str | None = Field(
+        None, description="Set when isin could not be resolved on justETF — all other fields are null"
+    )
+
 
 class EtfSummary(BaseModel):
     """Lightweight ETF row returned by compare and search tools."""

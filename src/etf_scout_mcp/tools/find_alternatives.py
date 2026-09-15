@@ -44,6 +44,9 @@ def register(mcp: FastMCP) -> None:
         except Exception as exc:
             return AlternativesResult(isin=isin, error=f"Failed to fetch {isin!r} from justETF: {exc}")
 
+        if profile is None:
+            return AlternativesResult(isin=isin, error=f"ISIN {isin!r} not found on justETF.")
+
         index = profile.get("index")
         if not index:
             return AlternativesResult(
