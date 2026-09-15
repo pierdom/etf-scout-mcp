@@ -27,4 +27,11 @@ packages = ["src/etf_scout_mcp"]
 allow-direct-references = true
 
 [dependency-groups]
-dev = []
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
