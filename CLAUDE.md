@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-`etf-scout-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server for ETF research. It exposes 7 MCP tools backed by three data sources: **justETF** (scraping), **Yahoo Finance** (yfinance + curl_cffi), and **OpenFIGI** (REST API).
+`etf-scout-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server for ETF research. It exposes 10 MCP tools backed by three data sources: **justETF** (scraping), **Yahoo Finance** (yfinance + curl_cffi), and **OpenFIGI** (REST API).
 
 ## Commands
 
@@ -52,9 +52,10 @@ src/etf_scout_mcp/
 └── tools/
     ├── etf_profile.py, search.py, etf_compare.py
     ├── quote.py, batch_quote.py, history.py, etf_listings.py
+    └── portfolio_xray.py, compute_overlap.py, find_alternatives.py
 ```
 
-**The 7 MCP tools:** `get_etf_profile`, `search_etfs`, `compare_etfs`, `get_quote`, `get_quotes`, `get_history`, `get_etf_listings`.
+**The 10 MCP tools:** `get_etf_profile`, `search_etfs`, `compare_etfs`, `get_quote`, `get_quotes`, `get_history`, `get_etf_listings`, `portfolio_xray`, `compute_overlap`, `find_alternatives`.
 
 **Request flow:** MCP client → `server.py` (tool dispatch) → `tools/` (input validation) → `cache.py` (@cached check) → `sources/` (network fetch) → Pydantic model → client.
 
@@ -77,9 +78,10 @@ src/etf_scout_mcp/
 | `ETF_SCOUT_MCP_CACHE_ENABLED` | `true` | `false` disables the cache entirely |
 | `ETF_SCOUT_MCP_CACHE_TTL_QUOTE` / `_PROFILE` / `_HISTORY` | `60` / `86400` / `3600` | Per-type TTLs in seconds |
 | `ETF_SCOUT_MCP_LOG_LEVEL` | `INFO` | Standard Python log level |
-| `OPENFIGI_API_KEY` | — | Optional; raises rate limit and adds `mic_code` to listings |
+| `OPENFIGI_API_KEY` | — | Optional; raises rate limit from 25/min to 25/6s |
 
-Copy `.env.example` to `.env` before running with HTTP transport.
+Copy `.env.example` to `.env` before running with HTTP transport. `OIDC_*` vars (optional,
+`http` transport only) enable OAuth login for clients that require it — see README.
 
 ## Data conventions
 
@@ -90,19 +92,11 @@ Copy `.env.example` to `.env` before running with HTTP transport.
 
 ## Deployment
 
-**Claude Desktop** only supports stdio MCP servers via `claude_desktop_config.json`. Use:
-```json
-{
-  "etf-scout-mcp": {
-    "command": "uv",
-    "args": ["--directory", "/Users/pierdom/Repos/etf-scout-mcp", "run", "etf-scout-mcp"],
-    "env": { "MCP_TRANSPORT": "stdio" }
-  }
-}
-```
-HTTP entries in that file are silently skipped. Remote HTTP MCP in Claude Desktop goes through Anthropic's cloud (Settings → Integrations) and requires a publicly reachable server.
-
-**Claude Code CLI** supports HTTP MCP servers. The Docker container (`docker compose up -d`) runs on port 8765 for this.
+**Claude Desktop** only supports stdio servers directly (`claude_desktop_config.json`;
+HTTP entries are silently skipped). **Claude Code CLI** and self-hosted clients can use
+`http` transport (Docker, port 8765). **claude.ai / Claude mobile & desktop apps'
+remote connectors** require OAuth, not a bearer token — that's what `OIDC_*` is for.
+Full setup instructions for all three: README.
 
 ## Fragile dependencies
 
