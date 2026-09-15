@@ -77,3 +77,6 @@ class EtfSummary(BaseModel):
     return_3y: float | None = Field(None, description="3-year total return in percent")
     return_5y: float | None = Field(None, description="5-year total return in percent")
     volatility_1y: float | None = Field(None, description="1-year volatility in percent")
+    error: str | None = Field(
+        None, description="Set when this ISIN could not be resolved — all other fields are null"
+    )

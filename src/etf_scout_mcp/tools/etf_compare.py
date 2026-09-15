@@ -23,7 +23,21 @@ def register(mcp: FastMCP) -> None:
         before comparing. This tool is for research only — pair it with a
         portfolio tool such as Ghostfolio (ghostfolio-mcp) for tracking.
 
+        Returns one row per requested ISIN, in the order given, even when a
+        lookup fails — a failed ISIN carries a populated `error` and null
+        data fields rather than being silently dropped from the list.
+
         isins: List of ISINs to compare, e.g. ['IE00B4L5Y983', 'IE00BK5BQT80']
         """
-        results = await asyncio.gather(*[fetch_summary(isin) for isin in isins])
-        return [EtfSummary(**data) for data in results if data is not None]
+        results = await asyncio.gather(
+            *[fetch_summary(isin) for isin in isins], return_exceptions=True
+        )
+        rows = []
+        for isin, data in zip(isins, results):
+            if isinstance(data, Exception):
+                rows.append(EtfSummary(isin=isin, error=f"Failed to fetch {isin!r} from justETF: {data}"))
+            elif data is None:
+                rows.append(EtfSummary(isin=isin, error=f"ISIN {isin!r} not found on justETF."))
+            else:
+                rows.append(EtfSummary(**data))
+        return rows
