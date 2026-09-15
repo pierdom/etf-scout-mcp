@@ -211,7 +211,13 @@ live quote (EUR, European trading hours) when Yahoo fails and an `isin` was give
 | `isin` | `str \| None` | `None` — used for auto-resolution and Gettex fallback |
 | `include_book` | `bool` | `False` — fetch `bid`/`ask`/`spread_bps`/`market_state` too (see below) |
 
-At least one of `symbol`/`isin` is required. Returns `Quote`:
+At least one of `symbol`/`isin` is required. **`symbol` and `isin` are not
+cross-validated against each other** when both are given — `isin` is only consulted
+for ticker resolution when `symbol` is absent, or for the Gettex fallback if Yahoo
+fails. Passing a mismatched pair (a real ticker alongside a different fund's ISIN)
+does not raise; the response echoes back whatever `isin` you passed alongside the
+`symbol`'s quote. Get `isin` from `get_etf_listings` if precision matters for a
+downstream use. Returns `Quote`:
 
 ```
 get_quote(symbol="IWDA.AS")
