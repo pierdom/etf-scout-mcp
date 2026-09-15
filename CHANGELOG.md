@@ -41,6 +41,14 @@ produced them.
   division: `-10 / (0 + -10) = 1.0`) while the zero-weight holding contributed nothing.
 
   Zero is still allowed (contributes nothing, harmless).
+- `find_alternatives`'/`search_etfs`'s `query` docstrings no longer overclaim a literal
+  name-substring match. Verified in production: `find_alternatives` for IWDA
+  (index "MSCI World") returned two MSCI ACWI funds among the alternatives —
+  "MSCI World" isn't a substring of "MSCI ACWI" anywhere in the visible fund name, so
+  the match must be happening inside justETF's own search, which is fuzzier/broader
+  than a literal substring filter. Docstrings (`find_alternatives`, `search_etfs`,
+  `fetch_screener`) now describe it as "justETF's own search," not a substring match,
+  and note it can surface a related-but-different index. No behaviour change.
 
 ### Phase 3 — new tools
 - New tool `portfolio_xray(holdings: list[{isin, weight}])`: aggregated look-through

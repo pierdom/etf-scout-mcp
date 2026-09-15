@@ -50,7 +50,9 @@ def register(mcp: FastMCP) -> None:
         max_ter:      Maximum TER as a decimal (0.002 = 0.20%, 20 bps)
         min_fund_size_eur: Minimum fund size in EUR (1_000_000_000 = €1B)
         distribution: 'Accumulating' or 'Distributing'
-        query:        Free-text search — fund name substring or ISIN,
+        query:        Free-text search via justETF's own search (an ISIN, or a fund/
+                      index name query — not a literal substring match on the fund
+                      name, it can also surface a related-but-different index),
                       e.g. 'S&P 500', 'MSCI World ex USA', 'IE00B4L5Y983'
         provider:     Filter by fund provider, e.g. 'iShares', 'Vanguard',
                       'Amundi', 'Xtrackers', 'SPDR', 'Invesco'
