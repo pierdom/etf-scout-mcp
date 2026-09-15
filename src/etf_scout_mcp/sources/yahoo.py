@@ -45,6 +45,16 @@ _SESSION: cffi_requests.Session | None = None
 _RETRY_DELAYS = (1.0, 2.0, 4.0)  # seconds between attempts
 
 
+def _round_money(value: Any) -> float | None:
+    """Round a monetary/price field to 4 decimal places; pass through None as-is."""
+    if value is None:
+        return None
+    try:
+        return round(float(value), 4)
+    except (TypeError, ValueError):
+        return None
+
+
 def _get_session() -> cffi_requests.Session:
     global _SESSION
     if _SESSION is None:
@@ -89,22 +99,28 @@ async def fetch_quote(symbol: str) -> dict[str, Any]:
     """Fetch latest quote fields for *symbol* from Yahoo Finance.
 
     Returns a flat dict with keys: symbol, currency, price, previous_close,
-    open, day_high, day_low, volume, market_cap, as_of (ISO date string).
+    open, day_high, day_low, volume, as_of (ISO date string).
+
+    as_of is only set when a price was actually returned — callers must not
+    fabricate a date when price is None. Raises on a hard fetch failure;
+    a "resolved but empty" ticker instead comes back with price=None and
+    currency=None (distinguishable from "resolved, but market closed", where
+    currency is populated and price alone is None).
     """
     def _inner() -> dict[str, Any]:
         t = _ticker(symbol)
         info = _fetch_with_retry(lambda: t.fast_info)
+        price = getattr(info, "last_price", None)
         return {
             "symbol": symbol,
             "currency": getattr(info, "currency", None),
-            "price": getattr(info, "last_price", None),
-            "previous_close": getattr(info, "previous_close", None),
-            "open": getattr(info, "open", None),
-            "day_high": getattr(info, "day_high", None),
-            "day_low": getattr(info, "day_low", None),
+            "price": _round_money(price),
+            "previous_close": _round_money(getattr(info, "previous_close", None)),
+            "open": _round_money(getattr(info, "open", None)),
+            "day_high": _round_money(getattr(info, "day_high", None)),
+            "day_low": _round_money(getattr(info, "day_low", None)),
             "volume": getattr(info, "three_month_average_volume", None),
-            "market_cap": getattr(info, "market_cap", None),
-            "as_of": date.today().isoformat(),
+            "as_of": date.today().isoformat() if price is not None else None,
         }
 
     return await asyncio.to_thread(_inner)
@@ -142,10 +158,10 @@ async def fetch_history(
             dt = row[date_col]
             rows.append({
                 "date": dt.date().isoformat() if hasattr(dt, "date") else str(dt),
-                "open": round(float(row["Open"]), 6) if row["Open"] == row["Open"] else None,
-                "high": round(float(row["High"]), 6) if row["High"] == row["High"] else None,
-                "low": round(float(row["Low"]), 6) if row["Low"] == row["Low"] else None,
-                "close": round(float(row["Close"]), 6),
+                "open": _round_money(row["Open"]) if row["Open"] == row["Open"] else None,
+                "high": _round_money(row["High"]) if row["High"] == row["High"] else None,
+                "low": _round_money(row["Low"]) if row["Low"] == row["Low"] else None,
+                "close": _round_money(row["Close"]),
                 "volume": int(row["Volume"]) if row["Volume"] == row["Volume"] else None,
             })
         return rows
