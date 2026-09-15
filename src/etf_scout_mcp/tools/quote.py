@@ -174,7 +174,14 @@ def register(mcp: FastMCP) -> None:
         symbol: Yahoo Finance ticker, e.g. 'IWDA.AS' or 'VWCE.DE'.
                 Optional when isin is provided.
         isin:   ISIN, e.g. 'IE00B4L5Y983'. Used for ticker auto-resolution
-                and as Gettex fallback when Yahoo fails.
+                and as Gettex fallback when Yahoo fails. When symbol is also
+                given, isin is NOT cross-checked against it — isin is only
+                consulted if symbol is absent, or if Yahoo fails and a
+                Gettex fallback is attempted. Passing a symbol and isin that
+                refer to different funds will not raise; the response
+                echoes back whatever isin you passed alongside the symbol's
+                quote. Get isin right from get_etf_listings if precision
+                matters, e.g. when passing it on to another tool.
         include_book: When True, also fetch bid/ask/spread_bps/market_state —
                 a second, heavier Yahoo request than the base quote (only
                 fired when this is True). Only populated when the quote

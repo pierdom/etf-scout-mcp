@@ -28,6 +28,12 @@ produced them.
   the valid ones, instead of silently falling back to default (fund-size-descending)
   order with no signal to the caller that their sort didn't apply — same class of gap
   `get_history`'s `period`/`interval` validation already covers elsewhere.
+- `get_quote`'s docstring now documents (previously undocumented) that `symbol` and
+  `isin` are not cross-validated against each other when both are given — a mismatched
+  pair doesn't raise, it just echoes back the `isin` you passed alongside the
+  `symbol`'s quote. Behaviour unchanged; this was a documentation gap, not a bug —
+  locked in with a test so a future change doesn't silently start (or stop)
+  cross-validating without an explicit decision.
 
 ### Phase 3 — new tools
 - New tool `portfolio_xray(holdings: list[{isin, weight}])`: aggregated look-through
