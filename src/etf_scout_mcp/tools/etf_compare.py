@@ -14,8 +14,9 @@ def register(mcp: FastMCP) -> None:
     async def compare_etfs(isins: list[str]) -> list[EtfSummary]:
         """Return a side-by-side comparison of multiple ETFs identified by ISIN.
 
-        Fetches TER, fund size, replication, distribution policy, 1/3/5-year
-        returns, and volatility for each fund from justETF. Useful for
+        Fetches TER, fund size, fund currency, replication, distribution
+        policy, 1/3/5-year returns (cumulative, plus 3y/5y annualised CAGR),
+        volatility, and data_as_of for each fund from justETF. Useful for
         choosing between similar ETFs (e.g. IWDA vs VWCE vs SPDR ACWI).
 
         Use get_etf_profile for deeper detail on a single fund (holdings,
