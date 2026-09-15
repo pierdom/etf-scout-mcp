@@ -16,6 +16,10 @@ produced them.
   `sum(min(weight_a, weight_b))` over shared top-10 holdings. Always flagged
   `approximate` for the same top-10-disclosure reason as `portfolio_xray`. A failed
   ISIN sets `error` and `overlap_pct: null` rather than raising.
+- New tool `find_alternatives(isin, limit=10)`: funds tracking a similar index,
+  matched by index-name substring against other funds' names, ranked cheapest-first by
+  TER (`ranked_by: "ter"` — no tracking-difference data available, so not a full
+  cost-of-ownership ranking). Excludes the source ISIN from its own results.
 - FEAT-5 (tracking difference) and FEAT-6 (`compare_costs`) dropped from this phase —
   not sourceable from the pinned scraper, its current upstream HEAD, or justETF's
   public profile page HTML. FEAT-8 (Spanish-resident fields) dropped for the same
