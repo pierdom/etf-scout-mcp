@@ -12,8 +12,6 @@ class EtfListing(BaseModel):
     ticker: str | None = Field(None, description="Ticker symbol on this exchange, e.g. 'IWDA' or 'EUNL'")
     name: str | None = None
     exch_code: str | None = Field(None, description="Bloomberg exchange code, e.g. 'GR' (Xetra), 'EO' (Euronext Amsterdam), 'LN' (LSE), 'SW' (SIX Swiss Exchange)")
-    mic_code: str | None = Field(None, description="ISO 10383 MIC code, e.g. 'XETR', 'XAMS', 'XLON'. Only populated when OPENFIGI_API_KEY is configured.")
-    currency: str | None = Field(None, description="Trading currency. Not returned by the OpenFIGI mapping endpoint — always null.")
     security_type: str | None = None
     market_sector: str | None = None
     security_description: str | None = None

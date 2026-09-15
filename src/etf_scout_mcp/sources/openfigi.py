@@ -42,8 +42,9 @@ def _headers() -> dict[str, str]:
 async def fetch_listings(isin: str) -> list[dict[str, Any]]:
     """Fetch all exchange listings for *isin* from the OpenFIGI API.
 
-    Returns a list of dicts with figi, ticker, exchCode, micCode,
-    currency, name, securityType, marketSector fields.
+    Returns a list of dicts with figi, ticker, exchCode, name, securityType,
+    marketSector fields. The /v3/mapping response does not carry micCode or
+    currency for equity/ETF rows, so those are not included here.
     """
     _ensure_log_handler()
     t0 = time.monotonic()
@@ -91,30 +92,12 @@ async def fetch_listings(isin: str) -> list[dict[str, Any]]:
             "ticker": r.get("ticker"),
             "name": r.get("name"),
             "exch_code": r.get("exchCode"),
-            "mic_code": r.get("micCode"),
-            "currency": r.get("currency"),
             "security_type": r.get("securityType"),
             "market_sector": r.get("marketSector"),
             "security_description": r.get("securityDescription"),
         }
         for r in rows
     ]
-
-
-async def fetch_ticker_for_exchange(isin: str, mic_code: str) -> str | None:
-    """Return the ticker for *isin* on the exchange identified by *mic_code*.
-
-    Convenience wrapper over fetch_listings for the common "give me the
-    Xetra ticker" use case. Returns None if no listing found.
-
-    mic_code: MIC exchange code, e.g. 'XETR' (Xetra), 'XAMS' (Euronext
-              Amsterdam), 'XLON' (LSE), 'XPAR' (Euronext Paris).
-    """
-    listings = await fetch_listings(isin)
-    for listing in listings:
-        if listing.get("mic_code") == mic_code:
-            return listing.get("ticker")
-    return None
 
 
 # Bloomberg exchange code → Yahoo Finance ticker suffix.
