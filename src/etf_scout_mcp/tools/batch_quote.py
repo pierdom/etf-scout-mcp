@@ -10,17 +10,21 @@ from etf_scout_mcp.tools.quote import Quote, fetch_one
 
 
 class QuoteResult(Quote):
-    error: str | None = Field(None, description="Set when this symbol/ISIN could not be fetched")
+    requested: str = Field(
+        description="Exact input string this row corresponds to (a symbol or an ISIN)."
+    )
 
 
-async def _safe_fetch(symbol: str | None, isin: str | None) -> QuoteResult:
+async def _safe_fetch(symbol: str | None, isin: str | None, requested: str) -> QuoteResult:
     """Wrap fetch_one so a single failure doesn't abort the whole batch."""
     try:
         q = await fetch_one(symbol, isin)
-        return QuoteResult(**q.model_dump())
+        return QuoteResult(requested=requested, **q.model_dump())
     except Exception as exc:
         fallback_symbol = symbol or isin or "unknown"
-        return QuoteResult(symbol=fallback_symbol, isin=isin, source="error", error=str(exc))
+        return QuoteResult(
+            requested=requested, symbol=fallback_symbol, isin=isin, source="error", error=str(exc)
+        )
 
 
 def register(mcp: FastMCP) -> None:
@@ -31,10 +35,13 @@ def register(mcp: FastMCP) -> None:
     ) -> list[QuoteResult]:
         """Return the latest price quotes for multiple ETFs in a single call.
 
-        Fetches all quotes concurrently. Each entry in the result list corresponds
-        to one requested symbol or ISIN in the order given. If a single lookup fails,
-        that entry is still returned with price=null and an error field set — the
-        rest of the batch is unaffected.
+        Fetches all quotes concurrently. Returns one row per requested symbol
+        and one row per requested isin — all `symbols` rows first (in the order
+        given), then all `isins` rows (in the order given). Each row's `requested`
+        field echoes the exact input string it corresponds to, so callers don't
+        need to rely on position when symbols and isins are combined. If a single
+        lookup fails, that row is still returned with price=null, source="error",
+        and a populated `error` — the rest of the batch is unaffected.
 
         Use get_quote for a single ETF, or this tool when you need prices for
         several ETFs at once (e.g. comparing a shortlist, marking a portfolio).
@@ -50,9 +57,9 @@ def register(mcp: FastMCP) -> None:
 
         coros = []
         for sym in (symbols or []):
-            coros.append(_safe_fetch(sym, None))
+            coros.append(_safe_fetch(sym, None, requested=sym))
         for isin in (isins or []):
-            coros.append(_safe_fetch(None, isin))
+            coros.append(_safe_fetch(None, isin, requested=isin))
 
         results = await asyncio.gather(*coros)
         return list(results)
