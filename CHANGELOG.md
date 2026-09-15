@@ -6,6 +6,15 @@ produced them.
 
 ## Unreleased
 
+### Post-deploy audit fixes
+- `get_etf_profile` (and everything built on it — `portfolio_xray`, `compute_overlap`,
+  `find_alternatives`) no longer fabricates a profile for an ISIN that doesn't exist on
+  justETF. justETF's single-ISIN scrape doesn't reliably raise/404 for a bad ISIN — it
+  can return a generic fallback page, which was previously parsed into a profile with
+  `name: "ETF Screener"` and defaulted booleans instead of an error. Found via live
+  production testing after the Phase 0-3 deploy; `EtfProfile` gains an `error` field to
+  match `EtfSummary`/`Quote`.
+
 ### Phase 3 — new tools
 - New tool `portfolio_xray(holdings: list[{isin, weight}])`: aggregated look-through
   country/sector/single-name exposure across a set of ETF holdings. Country/sector data

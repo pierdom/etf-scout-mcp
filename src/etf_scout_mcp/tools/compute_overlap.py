@@ -62,8 +62,12 @@ def register(mcp: FastMCP) -> None:
         errors = []
         if isinstance(profile_a, Exception):
             errors.append(f"{isin_a!r}: {profile_a}")
+        elif profile_a is None:
+            errors.append(f"{isin_a!r}: not found on justETF")
         if isinstance(profile_b, Exception):
             errors.append(f"{isin_b!r}: {profile_b}")
+        elif profile_b is None:
+            errors.append(f"{isin_b!r}: not found on justETF")
         if errors:
             return OverlapResult(
                 isin_a=isin_a,

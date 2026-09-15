@@ -134,12 +134,20 @@ get_etf_profile(isin="IE00B4L5Y983")
     "return_3y_annualised_pct": 9.98, "return_5y_annualised_pct": 13.68,
     "top_holdings": [{"name": "Apple Inc", "isin": "US0378331005", "weight": 5.3}, ...],
     "countries": [{"name": "United States", "weight": 67.3}, ...],
-    "sectors": [{"name": "Information Technology", "weight": 24.1}, ...]
+    "sectors": [{"name": "Information Technology", "weight": 24.1}, ...],
+    "error": null
   }
 ```
 
 `distribution_frequency` (and every other scraped string field) is `null`, not `"-"`,
 when justETF doesn't have the data — see "Error model."
+
+When `isin` doesn't resolve to a real fund on justETF, every field is `null` except
+`isin` and `error` (`"ISIN '...' not found on justETF."`) — justETF's own scraper
+doesn't reliably signal "not found" for a single-ISIN profile lookup (it can return a
+generic fallback page instead of a 404), so this is detected by checking that the
+scrape came back with no `ter`, `fund_size_eur`, or `inception_date` at all, which no
+real fund profile is ever missing all three of.
 
 ### `compare_etfs`
 
@@ -419,6 +427,11 @@ recorded index for it.
   comes back as `null`, never the raw placeholder string.
 - Invalid `period`/`interval` on `get_history` raise a `ValueError` naming the value you
   passed and listing what's valid — they are not silently passed through to Yahoo.
+- **An ISIN that doesn't exist on justETF never comes back as a fabricated profile.**
+  `get_etf_profile`/`portfolio_xray`/`compute_overlap`/`find_alternatives` all detect
+  this (justETF's single-ISIN scrape doesn't reliably 404 — it can return a generic
+  fallback page instead) and surface a populated `error` naming the bad ISIN, rather
+  than a profile with a plausible-looking but meaningless `name`.
 
 ## Payload-size guidance for agent callers
 

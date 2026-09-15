@@ -26,6 +26,8 @@ def register(mcp: FastMCP) -> None:
         isin: ISIN of the ETF, e.g. 'IE00B4L5Y983'
         """
         data = await fetch_profile(isin)
+        if data is None:
+            return EtfProfile(isin=isin, error=f"ISIN {isin!r} not found on justETF.")
         return EtfProfile(
             **{
                 k: v for k, v in data.items()

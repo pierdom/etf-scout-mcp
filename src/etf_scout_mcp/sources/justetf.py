@@ -236,15 +236,17 @@ def _is_leveraged(name: str | None) -> bool:
 
 
 @cached(ttl_key="profile")
-async def fetch_profile(isin: str) -> dict[str, Any]:
+async def fetch_profile(isin: str) -> dict[str, Any] | None:
     """Fetch full ETF profile for *isin* from justETF.
 
-    Returns a dict suitable for building an EtfProfile model.
+    Returns a dict suitable for building an EtfProfile model, or None if
+    *isin* doesn't resolve to a real fund on justETF. Also merges in
+    return_1y/3y/5y (+ 3y/5y annualised) from the screener scrape
+    (fetch_summary) — the profile scrape itself has no return fields.
+
     TER is decimal (0.002 = 0.20%). fund_size_eur is in EUR (not millions).
-    Also merges in return_1y/3y/5y (+ 3y/5y annualised) from the screener
-    scrape (fetch_summary) — the profile scrape itself has no return fields.
     """
-    def _inner() -> dict[str, Any]:
+    def _inner() -> dict[str, Any] | None:
         _ensure_log_handler()
         t0 = time.monotonic()
         try:
@@ -252,6 +254,14 @@ async def fetch_profile(isin: str) -> dict[str, Any]:
         except Exception as exc:
             _log.warning("error fn=get_etf_overview isin=%s latency=%.3fs error=%r", isin, time.monotonic() - t0, exc)
             raise
+        # get_etf_overview doesn't raise for an ISIN that doesn't exist on
+        # justETF — it silently parses whatever page comes back (observed:
+        # justETF's generic "ETF Screener" page). A real fund profile always
+        # has at least these three; their joint absence is the signal that
+        # this isn't a real fund page rather than a fund missing this data.
+        if ov.get("ter") is None and ov.get("fund_size_eur") is None and ov.get("inception_date") is None:
+            _log.warning("not_found fn=get_etf_overview isin=%s latency=%.3fs (no ter/fund_size/inception_date)", isin, time.monotonic() - t0)
+            return None
         _log.info("ok fn=get_etf_overview isin=%s latency=%.3fs", isin, time.monotonic() - t0)
         return {
             "isin": ov["isin"],
@@ -297,6 +307,9 @@ async def fetch_profile(isin: str) -> dict[str, Any]:
     except asyncio.TimeoutError:
         _log.warning("timeout fn=get_etf_overview isin=%s after 45s", isin)
         raise RuntimeError(f"justETF request timed out for {isin}") from None
+
+    if profile is None:
+        return None
 
     profile["data_as_of"] = _today()
 
