@@ -79,7 +79,7 @@ Filter the justETF screener. The primary discovery tool.
 | `currency_hedged` | `bool \| None` | `None` | |
 | `replication` | `str \| None` | `None` | Substring match: `full`, `sampling`, `swap` |
 | `sustainability` | `bool \| None` | `None` | |
-| `sort_by` | `str \| None` | `None` | `ter` \| `fund_size` \| `return_1y` \| `return_3y` \| `return_5y` |
+| `sort_by` | `str \| None` | `None` | `ter` \| `fund_size` \| `return_1y` \| `return_3y` \| `return_5y` — rejected with a `ValueError` otherwise |
 | `exclude_leveraged` | `bool` | `False` | Best-effort name-regex heuristic — see below |
 | `limit` | `int` | `20` | Must be >= 1; rejected with a `ValueError` otherwise |
 | `offset` | `int` | `0` | Pagination; must be >= 0; rejected with a `ValueError` otherwise |

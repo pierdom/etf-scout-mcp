@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastmcp import FastMCP
 
 from etf_scout_mcp.models import EtfSummary
-from etf_scout_mcp.sources.justetf import fetch_screener
+from etf_scout_mcp.sources.justetf import _SORT_COLS, fetch_screener
 
 
 def register(mcp: FastMCP) -> None:
@@ -73,6 +73,8 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"limit must be a positive integer, got {limit}")
         if offset < 0:
             raise ValueError(f"offset must be zero or a positive integer, got {offset}")
+        if sort_by is not None and sort_by not in _SORT_COLS:
+            raise ValueError(f"Invalid sort_by {sort_by!r}. Valid values: {sorted(_SORT_COLS)}")
 
         rows = await fetch_screener(
             asset_class=asset_class,
