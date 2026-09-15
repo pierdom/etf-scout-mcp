@@ -31,7 +31,7 @@ This is a personal tool scraping and re-serving data from services whose terms m
 permit that use at scale. Don't point it at production traffic, don't redistribute the
 scraped data, and check justETF's and Yahoo's current terms yourself if you're unsure.
 
-## The 7 tools
+## The 8 tools
 
 | Tool | Source | Purpose |
 |---|---|---|
@@ -42,6 +42,7 @@ scraped data, and check justETF's and Yahoo's current terms yourself if you're u
 | `get_quote` | Yahoo → justETF Gettex | Latest price, one instrument |
 | `get_quotes` | Yahoo → justETF Gettex | Latest price, many instruments |
 | `get_history` | Yahoo | OHLCV series or computed summary stats |
+| `portfolio_xray` | justETF | Aggregated look-through country/sector/single-name exposure across a set of ETF holdings |
 
 **Conventions used throughout:**
 - TER is a **decimal**, not a percentage — `0.002` = 0.20% (20 bps)
@@ -289,6 +290,37 @@ get_history(symbol="VWCE.DE", period="5y", summary=True)
    "worst_month": {"month": "2022-09", "return_pct": -9.8},
    "yearly_returns": [{"year": "2021", "return_pct": 28.1}, {"year": "2022", "return_pct": -13.9}, ...]}
 ```
+
+### `portfolio_xray`
+
+Aggregated look-through country, sector, and top single-name exposure across a set of
+ETF holdings, weighted by portfolio weight. Pairs with a portfolio tool that knows what
+you actually hold (e.g. Ghostfolio via `ghostfolio-mcp`) — that tool answers "what do I
+hold," this answers "what am I exposed to" once you look through each fund.
+
+| Param | Type | Default |
+|---|---|---|
+| `holdings` | `list[{isin: str, weight: float}]` | required — weights are relative, don't need to sum to 100 |
+
+Returns `PortfolioXray`:
+
+```
+portfolio_xray(holdings=[{"isin": "IE00B4L5Y983", "weight": 60}, {"isin": "IE00BK5BQT80", "weight": 40}])
+→ {
+    "countries": [{"name": "United States", "weight": 61.2}, {"name": "Japan", "weight": 5.8}, ...],
+    "sectors": [{"name": "Information Technology", "weight": 22.4}, ...],
+    "top_single_names": [{"name": "Apple Inc", "isin": "US0378331005", "weight": 4.7}, ...],
+    "concentration_approximate": true,
+    "funds_requested": 2, "funds_resolved": 2, "errors": []
+  }
+```
+
+`countries`/`sectors` use each fund's full published breakdown — real, complete
+look-through data. `top_single_names` is **approximate**: justETF only discloses each
+fund's top 10 holdings, not the full constituent list, so real single-name
+concentration may be higher than shown — `concentration_approximate` is always `true`
+today as a reminder. Like `compare_etfs`, a holding that fails to resolve lands in
+`errors`, never a silent drop from the aggregation.
 
 ---
 
