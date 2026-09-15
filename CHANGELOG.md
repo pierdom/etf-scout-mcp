@@ -24,6 +24,10 @@ produced them.
   are now correctly `null` instead of always defaulting to `false` when unknown.
   `limit`/`offset` also gain input validation (`limit >= 1`, `offset >= 0`) instead of
   silently producing a confusing pandas slice on a negative value.
+- `search_etfs(sort_by=...)` now rejects an invalid value with a `ValueError` listing
+  the valid ones, instead of silently falling back to default (fund-size-descending)
+  order with no signal to the caller that their sort didn't apply — same class of gap
+  `get_history`'s `period`/`interval` validation already covers elsewhere.
 
 ### Phase 3 — new tools
 - New tool `portfolio_xray(holdings: list[{isin, weight}])`: aggregated look-through
