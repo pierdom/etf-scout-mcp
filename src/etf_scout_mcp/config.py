@@ -43,13 +43,16 @@ class Config:
         ).expanduser()
     )
     ttl_quote: int = field(
-        default_factory=lambda: int(os.getenv("ETF_SCOUT_MCP_CACHE_TTL_QUOTE", "300"))
+        default_factory=lambda: int(os.getenv("ETF_SCOUT_MCP_CACHE_TTL_QUOTE", "60"))
     )
     ttl_profile: int = field(
         default_factory=lambda: int(os.getenv("ETF_SCOUT_MCP_CACHE_TTL_PROFILE", "86400"))
     )
     ttl_history: int = field(
         default_factory=lambda: int(os.getenv("ETF_SCOUT_MCP_CACHE_TTL_HISTORY", "3600"))
+    )
+    cache_enabled: bool = field(
+        default_factory=lambda: _env_bool("ETF_SCOUT_MCP_CACHE_ENABLED", True)
     )
     log_level: str = field(
         default_factory=lambda: os.getenv("ETF_SCOUT_MCP_LOG_LEVEL", "INFO")

@@ -35,5 +35,16 @@ def isolated_cache(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cache_module.config, "cache_path", tmp_path / "test-cache.db")
     monkeypatch.setattr(cache_module, "_conn", None)
+    _reset_log_handlers(cache_module._log)
     yield
     monkeypatch.setattr(cache_module, "_conn", None)
+    _reset_log_handlers(cache_module._log)
+
+
+def _reset_log_handlers(logger) -> None:
+    """Module-level loggers only attach a handler once (`if _log.handlers:
+    return`) — close and clear it so _ensure_log_handler() re-attaches
+    against the test's tmp_path instead of a previous test's."""
+    for handler in list(logger.handlers):
+        handler.close()
+        logger.removeHandler(handler)

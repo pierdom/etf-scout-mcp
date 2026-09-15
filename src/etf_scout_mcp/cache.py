@@ -4,13 +4,30 @@ import datetime
 import functools
 import hashlib
 import json
+import logging
 import sqlite3
 import time
+from logging.handlers import RotatingFileHandler
 from typing import Any, Callable
 
 from etf_scout_mcp.config import config
 
 _conn: sqlite3.Connection | None = None
+
+_log = logging.getLogger("etf_scout_mcp.cache")
+
+
+def _ensure_log_handler() -> None:
+    if _log.handlers:
+        return
+    config.cache_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path = config.cache_path.parent / "calls.log"
+    handler = RotatingFileHandler(log_path, maxBytes=5 * 1024 * 1024, backupCount=3)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
+    _log.addHandler(handler)
+    _log.setLevel(config.log_level)
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -57,6 +74,12 @@ def cached(ttl_key: str) -> Callable:
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            _ensure_log_handler()
+
+            if not config.cache_enabled:
+                _log.info("disabled fn=%s ttl_key=%s", fn.__name__, ttl_key)
+                return await fn(*args, **kwargs)
+
             key = _make_key(fn.__name__, args, kwargs)
             now = time.time()
             conn = _get_conn()
@@ -65,8 +88,10 @@ def cached(ttl_key: str) -> Callable:
                 "SELECT value, expires_at FROM cache WHERE key = ?", (key,)
             ).fetchone()
             if row and row[1] > now:
+                _log.info("hit fn=%s ttl_key=%s key=%s", fn.__name__, ttl_key, key[:12])
                 return json.loads(row[0])
 
+            _log.info("miss fn=%s ttl_key=%s key=%s", fn.__name__, ttl_key, key[:12])
             result = await fn(*args, **kwargs)
             conn.execute(
                 "INSERT OR REPLACE INTO cache (key, value, expires_at) VALUES (?, ?, ?)",
