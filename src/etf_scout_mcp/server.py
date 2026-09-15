@@ -7,6 +7,7 @@ from fastmcp.server.auth.auth import AccessToken, AuthProvider
 from etf_scout_mcp.config import config
 from etf_scout_mcp.tools import (
     batch_quote,
+    compute_overlap,
     etf_compare,
     etf_listings,
     etf_profile,
@@ -85,6 +86,7 @@ etf_compare.register(mcp)
 search.register(mcp)
 etf_listings.register(mcp)
 portfolio_xray.register(mcp)
+compute_overlap.register(mcp)
 
 
 def main() -> None:
