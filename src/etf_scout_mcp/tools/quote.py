@@ -20,13 +20,52 @@ class Quote(BaseModel):
     day_high: float | None = None
     day_low: float | None = None
     volume: int | None = None
-    market_cap: float | None = Field(None, description="Market cap in the instrument's native currency")
-    as_of: str | None = Field(None, description="ISO 8601 date string")
-    source: str = Field(description="'yahoo' or 'justetf_gettex'")
+    as_of: str | None = Field(
+        None,
+        description="ISO 8601 date string. Always null when price is null — never fabricated.",
+    )
+    source: str = Field(description="'yahoo', 'justetf_gettex', or 'error' (price is null)")
+    error: str | None = Field(
+        None,
+        description="Set whenever price is null: what failed and what to try instead.",
+    )
+
+
+def _round(value: float | None) -> float | None:
+    return round(value, 4) if value is not None else None
+
+
+async def _fetch_gettex(isin: str, resolved_symbol: str) -> dict:
+    """Fetch the justETF Gettex live quote for *isin*. Raises on any failure."""
+    import justetf_scraping
+
+    def _inner() -> dict:
+        quotes = list(justetf_scraping.iterate_live_quote(isin))
+        if not quotes:
+            raise RuntimeError("no gettex quote received")
+        q = quotes[0]
+        last = q.get("last")
+        return {
+            "symbol": resolved_symbol,
+            "currency": q.get("currency", "EUR"),
+            "price": _round(last),
+            "previous_close": None,
+            "open": None,
+            "day_high": None,
+            "day_low": None,
+            "volume": None,
+            "as_of": q["timestamp"].date().isoformat() if (last is not None and q.get("timestamp")) else None,
+        }
+
+    return await asyncio.wait_for(asyncio.to_thread(_inner), timeout=20.0)
 
 
 async def fetch_one(symbol: str | None, isin: str | None) -> Quote:
-    """Fetch a single quote, resolving ISIN→ticker if needed, with Gettex fallback."""
+    """Fetch a single quote, resolving ISIN→ticker if needed, with Gettex fallback.
+
+    Never raises for a resolvable-but-priceless lookup — returns a Quote with
+    price=None, as_of=None, source="error", and a human-readable error instead.
+    """
     if not symbol and not isin:
         raise ValueError("Provide at least one of: symbol, isin")
 
@@ -34,48 +73,62 @@ async def fetch_one(symbol: str | None, isin: str | None) -> Quote:
     if not resolved_symbol:
         resolved_symbol = await resolve_yahoo_ticker(isin)  # type: ignore[arg-type]
         if not resolved_symbol:
-            raise RuntimeError(
-                f"Could not resolve a Yahoo Finance ticker for ISIN {isin!r}. "
-                "Try passing the ticker directly, e.g. 'EUNL.DE' or 'IWDA.AS'."
+            return Quote(
+                symbol=isin,  # type: ignore[arg-type]
+                isin=isin,
+                source="error",
+                error=(
+                    f"Could not resolve a Yahoo Finance ticker for ISIN {isin!r} via "
+                    "OpenFIGI. Try passing the ticker directly (e.g. 'EUNL.DE' or "
+                    "'IWDA.AS'), or call get_etf_listings to find one."
+                ),
             )
 
+    yahoo_error: str | None = None
+    data: dict | None = None
     try:
         data = await yahoo.fetch_quote(resolved_symbol)
-        if data.get("price") is None and isin:
-            raise RuntimeError(f"Yahoo returned no price for {resolved_symbol!r}")
-        return Quote(source="yahoo", isin=isin, **data)
-    except Exception as yahoo_err:
-        if not isin:
-            raise
+        if data.get("price") is None:
+            if data.get("currency") is None:
+                yahoo_error = (
+                    f"Ticker {resolved_symbol!r} was not recognized by Yahoo Finance. "
+                    "Verify the symbol, or call get_etf_listings to find the correct one."
+                )
+            else:
+                yahoo_error = (
+                    f"Yahoo Finance returned no price for {resolved_symbol!r} — the "
+                    "market may be closed or the instrument halted. Try again during "
+                    "exchange trading hours."
+                )
+    except Exception as exc:
+        yahoo_error = f"Yahoo Finance request failed for {resolved_symbol!r}: {exc}"
 
-        # Gettex fallback — justETF live quote (EUR, Gettex only)
-        try:
-            import justetf_scraping
+    if yahoo_error is None:
+        return Quote(source="yahoo", isin=isin, error=None, **data)  # type: ignore[arg-type]
 
-            def _gettex() -> dict:
-                quotes = list(justetf_scraping.iterate_live_quote(isin))
-                if not quotes:
-                    raise RuntimeError("no gettex quote received")
-                q = quotes[0]
-                return {
-                    "symbol": resolved_symbol,
-                    "currency": q.get("currency", "EUR"),
-                    "price": q.get("last"),
-                    "previous_close": None,
-                    "open": None,
-                    "day_high": None,
-                    "day_low": None,
-                    "volume": None,
-                    "market_cap": None,
-                    "as_of": q["timestamp"].date().isoformat() if q.get("timestamp") else None,
-                }
+    if not isin:
+        return Quote(symbol=resolved_symbol, isin=isin, source="error", error=yahoo_error)
 
-            data = await asyncio.wait_for(asyncio.to_thread(_gettex), timeout=20.0)
-            return Quote(source="justetf_gettex", isin=isin, **data)
-        except asyncio.TimeoutError:
-            raise RuntimeError(f"Gettex fallback timed out for {isin}") from None
-        except Exception:
-            raise yahoo_err  # surface the original Yahoo error if both fail
+    # Gettex fallback — justETF live quote (EUR, Gettex only)
+    try:
+        gettex_data = await _fetch_gettex(isin, resolved_symbol)
+        if gettex_data.get("price") is None:
+            raise RuntimeError("gettex quote had no price")
+        return Quote(source="justetf_gettex", isin=isin, error=None, **gettex_data)
+    except asyncio.TimeoutError:
+        return Quote(
+            symbol=resolved_symbol,
+            isin=isin,
+            source="error",
+            error=f"{yahoo_error} Gettex fallback also timed out for {isin}.",
+        )
+    except Exception as gettex_exc:
+        return Quote(
+            symbol=resolved_symbol,
+            isin=isin,
+            source="error",
+            error=f"{yahoo_error} Gettex fallback also failed: {gettex_exc}",
+        )
 
 
 def register(mcp: FastMCP) -> None:
