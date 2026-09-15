@@ -81,10 +81,12 @@ Filter the justETF screener. The primary discovery tool.
 | `sustainability` | `bool \| None` | `None` | |
 | `sort_by` | `str \| None` | `None` | `ter` \| `fund_size` \| `return_1y` \| `return_3y` \| `return_5y` |
 | `exclude_leveraged` | `bool` | `False` | Best-effort name-regex heuristic — see below |
-| `limit` | `int` | `20` | |
-| `offset` | `int` | `0` | Pagination |
+| `limit` | `int` | `20` | Must be >= 1; rejected with a `ValueError` otherwise |
+| `offset` | `int` | `0` | Pagination; must be >= 0; rejected with a `ValueError` otherwise |
 
-Returns `list[EtfSummary]` — same schema `compare_etfs` uses (see below).
+Returns `list[EtfSummary]` — same schema `compare_etfs` uses (see below). `currency_hedged`
+and `sustainability` are `null` (not `false`) when justETF's screener data doesn't have
+a value for that fund — never fabricated as a default.
 
 **Known limitation:** rows don't carry `distribution_frequency` — that field only
 exists in the single-ISIN profile scrape (`get_etf_profile`), not the screener, and
