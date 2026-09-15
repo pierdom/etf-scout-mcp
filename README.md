@@ -335,7 +335,7 @@ hold," this answers "what am I exposed to" once you look through each fund.
 
 | Param | Type | Default |
 |---|---|---|
-| `holdings` | `list[{isin: str, weight: float}]` | required — weights are relative, don't need to sum to 100 |
+| `holdings` | `list[{isin: str, weight: float}]` | required — weights are relative, don't need to sum to 100, but must each be >= 0 (rejected with a `ValueError` naming the offending ISIN otherwise) |
 
 Returns `PortfolioXray`:
 
