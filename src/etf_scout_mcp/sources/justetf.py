@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from typing import Any
 
+import pandas as pd
 import requests as _requests
 from requests.adapters import HTTPAdapter as _HTTPAdapter
 
@@ -328,32 +329,51 @@ async def fetch_profile(isin: str) -> dict[str, Any] | None:
     return profile
 
 
+def _row_get(row: Any, key: str) -> Any:
+    """row.get(key), normalising pandas' NA sentinels (NaN, pd.NA, pd.NaT) to
+    plain None. pd.NA in particular raises TypeError on a bare bool()/if
+    check ("boolean value of NA is ambiguous") — routing every field through
+    this first means every downstream helper can use plain Python
+    truthiness safely instead of each needing its own NA guard."""
+    value = row.get(key)
+    if value is None:
+        return None
+    try:
+        is_na = pd.isna(value)
+    except (TypeError, ValueError):
+        return value
+    return None if is_na else value
+
+
 def _row_to_summary(isin: str, row: Any, data_as_of: str) -> dict[str, Any]:
     """Convert a load_overview DataFrame row to a summary dict."""
-    inc = row.get("inception_date")
-    return_3y = _safe_float(row.get("last_three_years"))
-    return_5y = _safe_float(row.get("last_five_years"))
-    name = row.get("name")
+    inc = _row_get(row, "inception_date")
+    return_3y = _safe_float(_row_get(row, "last_three_years"))
+    return_5y = _safe_float(_row_get(row, "last_five_years"))
+    name = _row_get(row, "name")
+    size = _safe_float(_row_get(row, "size"))
+    hedged = _row_get(row, "hedged")
+    is_sustainable = _row_get(row, "is_sustainable")
     return {
         "isin": isin,
         "name": _normalise(name),
-        "ticker": _normalise(row.get("ticker")),
+        "ticker": _normalise(_row_get(row, "ticker")),
         "fund_provider": _extract_provider(name),
-        "fund_domicile": _normalise(row.get("domicile_country")),
-        "fund_currency": _normalise(row.get("currency")),
-        "fund_size_eur": _round_money(float(row["size"]) * 1_000_000) if row.get("size") and not math.isnan(float(row["size"])) else None,
-        "ter": _ter_to_decimal(row.get("ter")),
-        "replication": _normalise(row.get("replication")),
-        "distribution_policy": _normalise(row.get("dividends")),
-        "currency_hedged": bool(row.get("hedged")),
-        "sustainability": bool(row.get("is_sustainable")),
+        "fund_domicile": _normalise(_row_get(row, "domicile_country")),
+        "fund_currency": _normalise(_row_get(row, "currency")),
+        "fund_size_eur": _round_money(size * 1_000_000) if size is not None else None,
+        "ter": _ter_to_decimal(_row_get(row, "ter")),
+        "replication": _normalise(_row_get(row, "replication")),
+        "distribution_policy": _normalise(_row_get(row, "dividends")),
+        "currency_hedged": bool(hedged) if hedged is not None else None,
+        "sustainability": bool(is_sustainable) if is_sustainable is not None else None,
         "inception_date": inc.date().isoformat() if hasattr(inc, "date") else None,
-        "return_1y": _safe_float(row.get("last_year")),
+        "return_1y": _safe_float(_row_get(row, "last_year")),
         "return_3y": return_3y,
         "return_5y": return_5y,
         "return_3y_annualised_pct": _annualise(return_3y, 3),
         "return_5y_annualised_pct": _annualise(return_5y, 5),
-        "volatility_1y": _safe_float(row.get("last_year_volatility")),
+        "volatility_1y": _safe_float(_row_get(row, "last_year_volatility")),
         "leverage_factor": _detect_leverage_factor(name),
         "data_as_of": data_as_of,
     }

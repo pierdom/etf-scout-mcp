@@ -14,6 +14,16 @@ produced them.
   `name: "ETF Screener"` and defaulted booleans instead of an error. Found via live
   production testing after the Phase 0-3 deploy; `EtfProfile` gains an `error` field to
   match `EtfSummary`/`Quote`.
+- `search_etfs(limit=-5)` crashed with a raw `"boolean value of NA is ambiguous"`
+  exception — pandas' `pd.NA` sentinel raises on a bare `bool()`/truthiness check, and
+  the screener row conversion used plain Python truthiness on several fields. Fixed at
+  the root (a `_row_get` helper normalises `pd.NA`/`NaN`/`NaT` to `None` before any
+  field is touched) rather than patched at the one call site the negative limit
+  happened to expose — `currency_hedged`/`sustainability` could have hit the same crash
+  on a positive-`limit` query that included a fund with genuinely missing data; both
+  are now correctly `null` instead of always defaulting to `false` when unknown.
+  `limit`/`offset` also gain input validation (`limit >= 1`, `offset >= 0`) instead of
+  silently producing a confusing pandas slice on a negative value.
 
 ### Phase 3 — new tools
 - New tool `portfolio_xray(holdings: list[{isin, weight}])`: aggregated look-through

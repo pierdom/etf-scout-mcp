@@ -66,9 +66,14 @@ def register(mcp: FastMCP) -> None:
                       column, and leveraged-long products are not excluded by
                       any other filter here). Best-effort, not authoritative;
                       see leverage_factor on each row.
-        limit:        Maximum number of results to return (default 20)
-        offset:       Number of results to skip, for pagination (default 0)
+        limit:        Maximum number of results to return (default 20). Must be >= 1.
+        offset:       Number of results to skip, for pagination (default 0). Must be >= 0.
         """
+        if limit < 1:
+            raise ValueError(f"limit must be a positive integer, got {limit}")
+        if offset < 0:
+            raise ValueError(f"offset must be zero or a positive integer, got {offset}")
+
         rows = await fetch_screener(
             asset_class=asset_class,
             region=region,
