@@ -31,7 +31,7 @@ This is a personal tool scraping and re-serving data from services whose terms m
 permit that use at scale. Don't point it at production traffic, don't redistribute the
 scraped data, and check justETF's and Yahoo's current terms yourself if you're unsure.
 
-## The 8 tools
+## The 9 tools
 
 | Tool | Source | Purpose |
 |---|---|---|
@@ -43,6 +43,7 @@ scraped data, and check justETF's and Yahoo's current terms yourself if you're u
 | `get_quotes` | Yahoo → justETF Gettex | Latest price, many instruments |
 | `get_history` | Yahoo | OHLCV series or computed summary stats |
 | `portfolio_xray` | justETF | Aggregated look-through country/sector/single-name exposure across a set of ETF holdings |
+| `compute_overlap` | justETF | Top-10-holdings overlap between two ETFs |
 
 **Conventions used throughout:**
 - TER is a **decimal**, not a percentage — `0.002` = 0.20% (20 bps)
@@ -321,6 +322,33 @@ fund's top 10 holdings, not the full constituent list, so real single-name
 concentration may be higher than shown — `concentration_approximate` is always `true`
 today as a reminder. Like `compare_etfs`, a holding that fails to resolve lands in
 `errors`, never a silent drop from the aggregation.
+
+### `compute_overlap`
+
+Holdings-level overlap between two ETFs — a quick "are these two funds basically the
+same thing" check.
+
+| Param | Type | Default |
+|---|---|---|
+| `isin_a` | `str` | required |
+| `isin_b` | `str` | required |
+
+Returns `OverlapResult`:
+
+```
+compute_overlap(isin_a="IE00B4L5Y983", isin_b="IE00BK5BQT80")
+→ {
+    "isin_a": "IE00B4L5Y983", "isin_b": "IE00BK5BQT80", "overlap_pct": 8.4,
+    "shared_holdings": [{"name": "Apple Inc", "isin": "US0378331005", "weight_a": 5.3, "weight_b": 3.9}, ...],
+    "approximate": true, "holdings_compared_a": 10, "holdings_compared_b": 10, "error": null
+  }
+```
+
+`overlap_pct` is `sum(min(weight_a, weight_b))` over holdings both funds disclose in
+their **top 10** — `approximate` is always `true` (justETF doesn't publish full
+constituent lists, so two funds could hold near-identical portfolios past the top 10
+and still show low overlap here). If either ISIN fails to resolve, `error` is set and
+`overlap_pct` is `null` — the tool never raises for a bad ISIN.
 
 ---
 

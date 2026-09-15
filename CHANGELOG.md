@@ -12,6 +12,10 @@ produced them.
   is complete; single-name concentration is approximate (justETF only discloses each
   fund's top 10 holdings) — always flagged via `concentration_approximate`. A holding
   that fails to resolve lands in `errors`, never a silent drop.
+- New tool `compute_overlap(isin_a, isin_b)`: holdings-level overlap between two ETFs,
+  `sum(min(weight_a, weight_b))` over shared top-10 holdings. Always flagged
+  `approximate` for the same top-10-disclosure reason as `portfolio_xray`. A failed
+  ISIN sets `error` and `overlap_pct: null` rather than raising.
 - FEAT-5 (tracking difference) and FEAT-6 (`compare_costs`) dropped from this phase —
   not sourceable from the pinned scraper, its current upstream HEAD, or justETF's
   public profile page HTML. FEAT-8 (Spanish-resident fields) dropped for the same
