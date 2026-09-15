@@ -31,7 +31,7 @@ This is a personal tool scraping and re-serving data from services whose terms m
 permit that use at scale. Don't point it at production traffic, don't redistribute the
 scraped data, and check justETF's and Yahoo's current terms yourself if you're unsure.
 
-## The 9 tools
+## The 10 tools
 
 | Tool | Source | Purpose |
 |---|---|---|
@@ -44,6 +44,7 @@ scraped data, and check justETF's and Yahoo's current terms yourself if you're u
 | `get_history` | Yahoo | OHLCV series or computed summary stats |
 | `portfolio_xray` | justETF | Aggregated look-through country/sector/single-name exposure across a set of ETF holdings |
 | `compute_overlap` | justETF | Top-10-holdings overlap between two ETFs |
+| `find_alternatives` | justETF | Funds tracking a similar index, ranked cheapest-first by TER |
 
 **Conventions used throughout:**
 - TER is a **decimal**, not a percentage — `0.002` = 0.20% (20 bps)
@@ -349,6 +350,37 @@ their **top 10** — `approximate` is always `true` (justETF doesn't publish ful
 constituent lists, so two funds could hold near-identical portfolios past the top 10
 and still show low overlap here). If either ISIN fails to resolve, `error` is set and
 `overlap_pct` is `null` — the tool never raises for a bad ISIN.
+
+### `find_alternatives`
+
+Funds tracking a similar index to a given fund, cheapest-first by TER.
+
+| Param | Type | Default |
+|---|---|---|
+| `isin` | `str` | required |
+| `limit` | `int` | `10` |
+
+Returns `AlternativesResult`:
+
+```
+find_alternatives(isin="IE00B4L5Y983", limit=3)
+→ {
+    "isin": "IE00B4L5Y983", "index": "MSCI World", "ranked_by": "ter",
+    "alternatives": [
+      {"isin": "IE00BJ0KDQ92", "name": "SPDR MSCI World UCITS ETF", "ter": 0.0012, ...},
+      ...
+    ],
+    "error": null
+  }
+```
+
+Matches on the source fund's `index` name as a substring against other funds' names
+(the same free-text match `search_etfs`'s `query` uses) — best-effort text matching,
+not a guaranteed same-index match. `ranked_by` is always `"ter"` — justETF doesn't
+publish tracking-difference data (see CHANGELOG), so this isn't a full
+total-cost-of-ownership ranking, only a cheapest-advertised-cost one. `error` is set
+(with an empty `alternatives` list) when the ISIN fails to resolve or justETF has no
+recorded index for it.
 
 ---
 

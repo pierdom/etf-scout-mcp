@@ -11,6 +11,7 @@ from etf_scout_mcp.tools import (
     etf_compare,
     etf_listings,
     etf_profile,
+    find_alternatives,
     history,
     portfolio_xray,
     quote,
@@ -87,6 +88,7 @@ search.register(mcp)
 etf_listings.register(mcp)
 portfolio_xray.register(mcp)
 compute_overlap.register(mcp)
+find_alternatives.register(mcp)
 
 
 def main() -> None:
