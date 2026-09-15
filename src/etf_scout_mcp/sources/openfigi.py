@@ -42,9 +42,15 @@ def _headers() -> dict[str, str]:
 async def fetch_listings(isin: str) -> list[dict[str, Any]]:
     """Fetch all exchange listings for *isin* from the OpenFIGI API.
 
-    Returns a list of dicts with figi, ticker, exchCode, name, securityType,
-    marketSector fields. The /v3/mapping response does not carry micCode or
-    currency for equity/ETF rows, so those are not included here.
+    Returns a list of dicts with figi, composite_figi, share_class_figi,
+    ticker, exchCode, name, securityType, marketSector fields. The
+    /v3/mapping response does not carry micCode or currency for equity/ETF
+    rows, so those are not included here.
+
+    composite_figi/share_class_figi let callers collapse OpenFIGI's raw
+    response — which includes a separate row per trade-reporting venue, not
+    just per exchange listing — down to one row per real exchange listing
+    (figi == composite_figi marks the exchange-level composite row).
     """
     _ensure_log_handler()
     t0 = time.monotonic()
@@ -89,6 +95,8 @@ async def fetch_listings(isin: str) -> list[dict[str, Any]]:
     return [
         {
             "figi": r.get("figi"),
+            "composite_figi": r.get("compositeFIGI"),
+            "share_class_figi": r.get("shareClassFIGI"),
             "ticker": r.get("ticker"),
             "name": r.get("name"),
             "exch_code": r.get("exchCode"),
