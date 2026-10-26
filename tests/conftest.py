@@ -4,8 +4,9 @@ Tests exercise the MCP tools either directly (calling the tool-module's
 `fetch_one`/pure helpers) or, for the closures registered onto the FastMCP
 instance via `register(mcp)`, through FastMCP's in-memory `Client` against
 `etf_scout_mcp.server.mcp`. Either way, the actual network-facing source
-functions (`sources/yahoo.py`, `sources/justetf.py`, `sources/openfigi.py`)
-are monkeypatched per-test — no live network calls happen in this suite.
+functions (`sources/yahoo.py`, `sources/justetf.py`, `sources/openfigi.py`,
+`sources/eodhd.py`) are monkeypatched per-test — no live network calls happen
+in this suite.
 """
 from __future__ import annotations
 
@@ -48,3 +49,13 @@ def _reset_log_handlers(logger) -> None:
     for handler in list(logger.handlers):
         handler.close()
         logger.removeHandler(handler)
+
+
+@pytest.fixture(autouse=True)
+def _no_eodhd(monkeypatch):
+    """config loads .env, so a developer's real EODHD_API_KEY would otherwise
+    turn every Yahoo failure in this suite into a live (quota-burning) EODHD
+    call. Tests that exercise EODHD set the key explicitly."""
+    from etf_scout_mcp.config import config
+
+    monkeypatch.setattr(config, "eodhd_api_key", None)

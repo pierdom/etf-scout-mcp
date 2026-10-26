@@ -1,4 +1,4 @@
-"""Tool: get_history — OHLCV price history via yfinance, with a row budget."""
+"""Tool: get_history — OHLCV price history via yfinance (EODHD fallback), with a row budget."""
 from __future__ import annotations
 
 import math
@@ -8,7 +8,7 @@ from datetime import date
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from etf_scout_mcp.sources import yahoo
+from etf_scout_mcp.sources import eodhd, yahoo
 from etf_scout_mcp.sources.openfigi import resolve_yahoo_ticker
 
 # yfinance's documented period/interval vocabularies. Interval is deliberately
@@ -47,6 +47,14 @@ class HistoryResult(BaseModel):
         description="The interval originally requested, if it was auto-coarsened to "
         "stay under max_rows. Null when no coarsening happened.",
     )
+    source: str = Field(
+        "yahoo",
+        description="'yahoo', or 'eodhd' when Yahoo failed and the server has an EODHD key.",
+    )
+    note: str | None = Field(
+        None,
+        description="Data-source caveat, e.g. EODHD's free tier cutting history to one year.",
+    )
     bars: list[OhlcvBar]
 
 
@@ -58,6 +66,14 @@ class HistorySummary(BaseModel):
         None,
         description="The interval originally requested, if it was auto-coarsened to "
         "stay under max_rows before these stats were computed. Null when no coarsening happened.",
+    )
+    source: str = Field(
+        "yahoo",
+        description="'yahoo', or 'eodhd' when Yahoo failed and the server has an EODHD key.",
+    )
+    note: str | None = Field(
+        None,
+        description="Data-source caveat, e.g. EODHD's free tier cutting history to one year.",
     )
     first_date: str | None = None
     last_date: str | None = None
@@ -158,6 +174,40 @@ def _compute_summary(bars: list[dict]) -> dict:
     }
 
 
+async def _fetch_rows(symbol: str, period: str, interval: str) -> tuple[list[dict], str, str | None]:
+    """Fetch bars from Yahoo; on a failure or an empty series, retry on EODHD
+    when a key is configured. Returns (rows, source, note).
+
+    Without a usable EODHD result, Yahoo's own outcome stands: its exception
+    is re-raised, or its empty series returned.
+    """
+    yahoo_exc: Exception | None = None
+    try:
+        rows = await yahoo.fetch_history(symbol, period=period, interval=interval)
+        if rows:
+            return rows, "yahoo", None
+    except Exception as exc:
+        yahoo_exc = exc
+
+    eodhd_symbol = eodhd.to_eodhd_symbol(symbol) if eodhd.enabled() else None
+    if eodhd_symbol:
+        try:
+            data = await eodhd.fetch_history(eodhd_symbol, period=period, interval=interval)
+        except Exception as eodhd_exc:
+            if yahoo_exc is not None:
+                raise RuntimeError(
+                    f"Yahoo Finance failed for {symbol!r} ({yahoo_exc}); "
+                    f"EODHD fallback also failed: {eodhd_exc}"
+                ) from yahoo_exc
+        else:
+            if data["bars"]:
+                return data["bars"], "eodhd", data["warning"]
+
+    if yahoo_exc is not None:
+        raise yahoo_exc
+    return [], "yahoo", None
+
+
 def _infer_interval(dates: list[str]) -> str:
     """Best-effort bar-size inference from consecutive dates, for the
     volatility annualisation factor — cheaper than threading the effective
@@ -186,7 +236,9 @@ def register(mcp: FastMCP) -> None:
 
         Accepts a Yahoo Finance ticker, an ISIN, or both. When only an ISIN
         is given, the ticker is auto-resolved via OpenFIGI (Xetra preferred,
-        then Euronext Amsterdam, LSE, etc.).
+        then Euronext Amsterdam, LSE, etc.). If Yahoo fails and the server
+        has an EODHD key, falls back to EODHD (source='eodhd'; free tier
+        serves only the last year, reported in `note`).
 
         Use this to chart performance or compute custom metrics over time.
         Use get_quote for the latest price only.
@@ -228,11 +280,11 @@ def register(mcp: FastMCP) -> None:
 
         requested_interval = interval
         effective_interval = interval
-        rows = await yahoo.fetch_history(resolved_symbol, period=period, interval=effective_interval)
+        rows, source, note = await _fetch_rows(resolved_symbol, period, effective_interval)
 
         while len(rows) > max_rows and effective_interval != _INTERVAL_ORDER[-1]:
             effective_interval = _INTERVAL_ORDER[_INTERVAL_ORDER.index(effective_interval) + 1]
-            rows = await yahoo.fetch_history(resolved_symbol, period=period, interval=effective_interval)
+            rows, source, note = await _fetch_rows(resolved_symbol, period, effective_interval)
 
         downsampled_from = requested_interval if effective_interval != requested_interval else None
 
@@ -242,6 +294,8 @@ def register(mcp: FastMCP) -> None:
                 period=period,
                 interval=effective_interval,
                 downsampled_from=downsampled_from,
+                source=source,
+                note=note,
                 **_compute_summary(rows),
             )
 
@@ -250,5 +304,7 @@ def register(mcp: FastMCP) -> None:
             period=period,
             interval=effective_interval,
             downsampled_from=downsampled_from,
+            source=source,
+            note=note,
             bars=[OhlcvBar(**r) for r in rows],
         )

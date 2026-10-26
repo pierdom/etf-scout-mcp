@@ -1,4 +1,4 @@
-"""Tool: get_quote — latest price via Yahoo Finance, fallback to justETF Gettex."""
+"""Tool: get_quote — latest price via Yahoo Finance, fallback to EODHD then justETF Gettex."""
 from __future__ import annotations
 
 import asyncio
@@ -6,7 +6,7 @@ import asyncio
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from etf_scout_mcp.sources import yahoo
+from etf_scout_mcp.sources import eodhd, yahoo
 from etf_scout_mcp.sources.openfigi import resolve_yahoo_ticker
 
 
@@ -24,7 +24,9 @@ class Quote(BaseModel):
         None,
         description="ISO 8601 date string. Always null when price is null — never fabricated.",
     )
-    source: str = Field(description="'yahoo', 'justetf_gettex', or 'error' (price is null)")
+    source: str = Field(
+        description="'yahoo', 'eodhd', 'justetf_gettex', or 'error' (price is null)"
+    )
     error: str | None = Field(
         None,
         description="Set whenever price is null: what failed and what to try instead.",
@@ -73,7 +75,8 @@ async def _fetch_gettex(isin: str, resolved_symbol: str) -> dict:
 
 
 async def fetch_one(symbol: str | None, isin: str | None, include_book: bool = False) -> Quote:
-    """Fetch a single quote, resolving ISIN→ticker if needed, with Gettex fallback.
+    """Fetch a single quote, resolving ISIN→ticker if needed, with EODHD
+    (when EODHD_API_KEY is set) then Gettex fallback.
 
     Never raises for a resolvable-but-priceless lookup — returns a Quote with
     price=None, as_of=None, source="error", and a human-readable error instead.
@@ -129,6 +132,17 @@ async def fetch_one(symbol: str | None, isin: str | None, include_book: bool = F
                 book = {}  # never fail an otherwise-successful quote over book data
         return Quote(source="yahoo", isin=isin, error=None, **data, **book)  # type: ignore[arg-type]
 
+    # EODHD fallback — delayed quote, only when a key is configured. symbol
+    # stays the Yahoo ticker so callers can pass it on to other tools.
+    eodhd_symbol = eodhd.to_eodhd_symbol(resolved_symbol) if eodhd.enabled() else None
+    if eodhd_symbol:
+        try:
+            eodhd_data = await eodhd.fetch_quote(eodhd_symbol)
+            eodhd_data["symbol"] = resolved_symbol
+            return Quote(source="eodhd", isin=isin, error=None, **eodhd_data)
+        except Exception as eodhd_exc:
+            yahoo_error = f"{yahoo_error} EODHD fallback also failed: {eodhd_exc}"
+
     if not isin:
         return Quote(symbol=resolved_symbol, isin=isin, source="error", error=yahoo_error)
 
@@ -164,7 +178,9 @@ def register(mcp: FastMCP) -> None:
         Accepts a Yahoo Finance ticker, an ISIN, or both. When only an ISIN
         is given, the ticker is auto-resolved via OpenFIGI (Xetra preferred,
         then Euronext Amsterdam, LSE, etc.). If Yahoo fails, falls back to
-        the justETF Gettex live quote (EUR, European hours only).
+        EODHD (~15 min delayed, only when the server has an EODHD key;
+        currency is null on EODHD quotes), then to the justETF Gettex live
+        quote (EUR, European hours only).
 
         Use this for a current price check. Use get_quotes for multiple ETFs
         in one call, or get_history for OHLCV series.

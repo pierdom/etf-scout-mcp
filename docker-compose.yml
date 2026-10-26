@@ -17,7 +17,7 @@ services:
 
     restart: unless-stopped
 
-    # All ETF_SCOUT_MCP_*/OIDC_*/OPENFIGI_API_KEY vars live in .env — see
+    # All ETF_SCOUT_MCP_*/OIDC_*/OPENFIGI_API_KEY/EODHD_API_KEY vars live in .env — see
     # .env.example. Keeping them out of `environment:` here means secrets
     # never end up committed alongside this file.
     env_file: .env

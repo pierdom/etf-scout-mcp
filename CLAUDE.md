@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-`etf-scout-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server for ETF research. It exposes 10 MCP tools backed by three data sources: **justETF** (scraping), **Yahoo Finance** (yfinance + curl_cffi), and **OpenFIGI** (REST API).
+`etf-scout-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server for ETF research. It exposes 10 MCP tools backed by three data sources: **justETF** (scraping), **Yahoo Finance** (yfinance + curl_cffi), and **OpenFIGI** (REST API), plus **EODHD** (REST API) as an optional quote/history fallback.
 
 ## Commands
 
@@ -48,7 +48,8 @@ src/etf_scout_mcp/
 ├── sources/
 │   ├── justetf.py     # justETF scraping: profile, screener, overview
 │   ├── yahoo.py       # yfinance with curl_cffi Firefox TLS impersonation; quote + history
-│   └── openfigi.py    # httpx async; OpenFIGI exchange listings; handles 429 rate-limit
+│   ├── openfigi.py    # httpx async; OpenFIGI exchange listings; handles 429 rate-limit
+│   └── eodhd.py       # httpx async; optional quote/history fallback (EODHD_API_KEY)
 └── tools/
     ├── etf_profile.py, search.py, etf_compare.py
     ├── quote.py, batch_quote.py, history.py, etf_listings.py
@@ -59,7 +60,9 @@ src/etf_scout_mcp/
 
 **Request flow:** MCP client → `server.py` (tool dispatch) → `tools/` (input validation) → `cache.py` (@cached check) → `sources/` (network fetch) → Pydantic model → client.
 
-**Fallback logic in `quote.py`:** Yahoo Finance is tried first; if it fails with a bare ISIN, it retries using the justETF Gettex price.
+**Fallbacks:** `quote.py` tries Yahoo → EODHD (if `EODHD_API_KEY` set) → justETF Gettex (if an ISIN was passed); `history.py` tries Yahoo → EODHD.
+
+**EODHD:** free tier is 20 calls/day, so `tests/conftest.py` forces the key off for the suite. The token is a URL query param — never surface raw httpx exceptions from `sources/eodhd.py` (they embed the URL).
 
 **Adding a new tool:** Create `tools/new_tool.py` with a `register(mcp: FastMCP) -> None` function, then call `new_tool.register(mcp)` in `server.py`. Tools are registered at import time so `fastmcp inspect/dev` sees them without calling `main()`.
 
@@ -79,6 +82,7 @@ src/etf_scout_mcp/
 | `ETF_SCOUT_MCP_CACHE_TTL_QUOTE` / `_PROFILE` / `_HISTORY` | `60` / `86400` / `3600` | Per-type TTLs in seconds |
 | `ETF_SCOUT_MCP_LOG_LEVEL` | `INFO` | Standard Python log level |
 | `OPENFIGI_API_KEY` | — | Optional; raises rate limit from 25/min to 25/6s |
+| `EODHD_API_KEY` | — | Optional; enables the EODHD quote/history fallback |
 
 Copy `.env.example` to `.env` before running with HTTP transport. `OIDC_*` vars (optional,
 `http` transport only) enable OAuth login for clients that require it — see README.
