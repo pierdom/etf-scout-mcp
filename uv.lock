@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -443,7 +443,7 @@ dev = [
 requires-dist = [
     { name = "fastmcp", specifier = ">=2.0" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "justetf-scraping", git = "https://github.com/druzsan/justetf-scraping.git?rev=af8b7409a15c3b7fb62af7dc8fe41ab9513369c5" },
+    { name = "justetf-scraping", git = "https://github.com/druzsan/justetf-scraping.git?rev=9ecbc74787c3e94d8013d0fbf5f1383dc0d420d0" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "python-dotenv", specifier = ">=1.0" },
@@ -702,7 +702,7 @@ wheels = [
 [[package]]
 name = "justetf-scraping"
 version = "0.1.0"
-source = { git = "https://github.com/druzsan/justetf-scraping.git?rev=af8b7409a15c3b7fb62af7dc8fe41ab9513369c5#af8b7409a15c3b7fb62af7dc8fe41ab9513369c5" }
+source = { git = "https://github.com/druzsan/justetf-scraping.git?rev=9ecbc74787c3e94d8013d0fbf5f1383dc0d420d0#9ecbc74787c3e94d8013d0fbf5f1383dc0d420d0" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "pandas" },

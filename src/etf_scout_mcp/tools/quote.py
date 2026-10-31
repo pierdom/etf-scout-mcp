@@ -54,21 +54,19 @@ async def _fetch_gettex(isin: str, resolved_symbol: str) -> dict:
     import justetf_scraping
 
     def _inner() -> dict:
-        quotes = list(justetf_scraping.iterate_live_quote(isin))
-        if not quotes:
-            raise RuntimeError("no gettex quote received")
-        q = quotes[0]
-        last = q.get("last")
+        # load_live_quote returns the initial quote and closes the socket;
+        # iterate_live_quote would keep the thread waiting for updates forever.
+        q = justetf_scraping.load_live_quote(isin, timeout=15.0)
         return {
             "symbol": resolved_symbol,
-            "currency": q.get("currency", "EUR"),
-            "price": _round(last),
+            "currency": q.currency or "EUR",
+            "price": _round(q.last),
             "previous_close": None,
             "open": None,
             "day_high": None,
             "day_low": None,
             "volume": None,
-            "as_of": q["timestamp"].date().isoformat() if (last is not None and q.get("timestamp")) else None,
+            "as_of": q.timestamp.date().isoformat() if (q.last is not None and q.timestamp) else None,
         }
 
     return await asyncio.wait_for(asyncio.to_thread(_inner), timeout=20.0)
