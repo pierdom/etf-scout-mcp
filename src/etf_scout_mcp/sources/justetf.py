@@ -320,6 +320,12 @@ async def fetch_profile(isin: str) -> dict[str, Any] | None:
         _log.warning("error fn=fetch_summary(for profile returns) isin=%s error=%r", isin, exc)
         summary = None
 
+    # The profile scrape reads currency_hedged from a "Currency risk" row
+    # justETF renamed (to "Currency hedged"), so it reports every fund as
+    # hedged, and volatility left that table entirely. The screener row has
+    # both right; never fall back to the profile's always-True value.
+    profile["currency_hedged"] = summary.get("currency_hedged") if summary else None
+    profile["volatility_1y"] = summary.get("volatility_1y") if summary else None
     profile["return_1y"] = summary.get("return_1y") if summary else None
     profile["return_3y"] = summary.get("return_3y") if summary else None
     profile["return_5y"] = summary.get("return_5y") if summary else None
