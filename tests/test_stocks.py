@@ -12,7 +12,7 @@ from etf_scout_mcp.tools import stock_profile as sp
 
 def _info(**over) -> dict:
     base = {
-        "symbol": "AAPL", "quote_type": "EQUITY", "name": "Apple Inc.", "sector": "Technology",
+        "symbol": "AAPL", "quote_type": "EQUITY", "data_as_of": "2026-11-13", "name": "Apple Inc.", "sector": "Technology",
         "industry": "Consumer Electronics", "country": "United States", "exchange": "NMS",
         "currency": "USD", "pe_trailing": 39.9, "profit_margin_pct": 27.6, "dividend_yield_pct": 0.3,
         "description": "Makes phones.", "analyst_count": 40,
@@ -28,7 +28,7 @@ async def test_profile_from_yahoo(monkeypatch, mcp_client):
     monkeypatch.setattr(yahoo, "fetch_stock_info", fake)
     d = (await mcp_client.call_tool("get_stock_profile", {"symbol": "AAPL"})).data
     assert d.source == "yahoo" and d.name == "Apple Inc." and d.profit_margin_pct == 27.6
-    assert d.error is None and d.data_as_of
+    assert d.error is None and d.data_as_of == "2026-11-13"
     assert not hasattr(d, "quote_type")
 
 
@@ -59,8 +59,15 @@ async def test_profile_rejects_etf(monkeypatch):
 
 async def test_profile_unknown_ticker(monkeypatch):
     async def fake(symbol):
-        return {"symbol": symbol, "quote_type": None, "name": None}
+        raise yahoo.UnknownTicker(symbol)
 
+    async def eodhd_must_not_run(symbol):
+        raise AssertionError("EODHD quota must not be spent on an unknown ticker")
+
+    from etf_scout_mcp.config import config
+
+    monkeypatch.setattr(config, "eodhd_api_key", "secret")
+    monkeypatch.setattr(eodhd, "fetch_fundamentals", eodhd_must_not_run)
     monkeypatch.setattr(yahoo, "fetch_stock_info", fake)
     p = await sp.fetch_stock("ZZZZ", None)
     assert "not recognized" in p.error
@@ -104,7 +111,7 @@ async def test_profile_both_sources_fail_reports_error(monkeypatch):
 async def test_compare_stocks_keeps_order_and_failed_rows(monkeypatch, mcp_client):
     async def fake(symbol):
         if symbol == "BAD":
-            return {"symbol": symbol, "quote_type": None, "name": None}
+            raise yahoo.UnknownTicker(symbol)
         return _info(symbol=symbol)
 
     monkeypatch.setattr(yahoo, "fetch_stock_info", fake)
@@ -203,3 +210,93 @@ async def test_xray_counts_unknown_isin_as_stock(monkeypatch, mcp_client):
     assert d.top_single_names[0].name == "SAP SE" and d.top_single_names[0].weight == 50.0
     assert d.funds_resolved == 2 and d.stocks_resolved == 1
     assert [e.isin for e in d.errors] == ["XX0000000000"]
+
+
+async def test_data_as_of_comes_from_fetcher_not_today(monkeypatch):
+    async def fake(symbol):
+        return _info(data_as_of="2020-01-02")
+
+    monkeypatch.setattr(yahoo, "fetch_stock_info", fake)
+    assert (await sp.fetch_stock("AAPL", None)).data_as_of == "2020-01-02"
+
+
+async def test_compare_stocks_blank_and_padded_symbols(monkeypatch, mcp_client):
+    seen = []
+
+    async def fake(symbol):
+        seen.append(symbol)
+        return _info(symbol=symbol)
+
+    monkeypatch.setattr(yahoo, "fetch_stock_info", fake)
+    rows = (await mcp_client.call_tool("compare_stocks", {"symbols": [" AAPL", "", "MSFT"]})).data
+    assert seen == ["AAPL", "MSFT"]
+    assert [r.symbol for r in rows] == ["AAPL", "", "MSFT"]
+    assert rows[1].error and rows[0].error is None and rows[2].error is None
+
+
+async def test_empty_yahoo_info_is_not_cached(monkeypatch, isolated_cache):
+    class FakeTicker:
+        calls = 0
+
+        @property
+        def info(self):
+            FakeTicker.calls += 1
+            return {} if FakeTicker.calls == 1 else {"longName": "Apple Inc.", "quoteType": "EQUITY"}
+
+    monkeypatch.setattr(yahoo, "_ticker", lambda s: FakeTicker())
+    monkeypatch.setattr(yahoo.config, "cache_enabled", True)
+    with pytest.raises(yahoo.UnknownTicker):
+        await yahoo.fetch_stock_info("AAPL")
+    assert (await yahoo.fetch_stock_info("AAPL"))["name"] == "Apple Inc."
+
+
+def test_yahoo_pct_keeps_precision():
+    assert yahoo._pct(0.46321) == 46.321
+    assert yahoo._pct(0.00004) == 0.004
+    assert yahoo._pct(None) is None
+
+
+def test_share_class_ticker_normalised_for_yahoo():
+    assert openfigi.yahoo_symbol("BRK/B", "UN") == "BRK-B"
+    assert openfigi.yahoo_symbol("SAP", "GR") == "SAP.DE"
+    assert openfigi.yahoo_symbol("X", "ZZ") is None
+
+
+async def test_xray_merges_stock_and_etf_holding_by_isin(monkeypatch, mcp_client):
+    async def fake_profile(isin):
+        if isin == "FUND":
+            return {"isin": isin, "countries": [], "sectors": [],
+                    "top_holdings": [{"name": "Apple Inc", "isin": "US0378331005", "weight": 10.0}]}
+        return None
+
+    async def fake_stock(symbol, isin):
+        return sp.StockProfile(symbol="AAPL", isin=isin, name="Apple Inc.", country="United States", sector="Technology")
+
+    monkeypatch.setattr(xray_module, "fetch_profile", fake_profile)
+    monkeypatch.setattr(xray_module, "fetch_stock", fake_stock)
+    d = (await mcp_client.call_tool("portfolio_xray", {"holdings": [
+        {"isin": "FUND", "weight": 50}, {"isin": "US0378331005", "weight": 50}]})).data
+    apples = [n for n in d.top_single_names if n.isin == "US0378331005"]
+    assert len(apples) == 1 and apples[0].weight == 55.0
+
+
+async def test_xray_looks_up_stocks_concurrently(monkeypatch, mcp_client):
+    import asyncio
+
+    running = peak = 0
+
+    async def fake_profile(isin):
+        return None
+
+    async def fake_stock(symbol, isin):
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await asyncio.sleep(0.05)
+        running -= 1
+        return sp.StockProfile(symbol=isin, isin=isin, name=isin, country="X", sector="Y")
+
+    monkeypatch.setattr(xray_module, "fetch_profile", fake_profile)
+    monkeypatch.setattr(xray_module, "fetch_stock", fake_stock)
+    await mcp_client.call_tool("portfolio_xray", {"holdings": [{"isin": f"S{i}", "weight": 10} for i in range(5)]})
+    assert peak == 5

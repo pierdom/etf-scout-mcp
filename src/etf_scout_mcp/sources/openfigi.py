@@ -111,6 +111,9 @@ async def fetch_listings(isin: str) -> list[dict[str, Any]]:
 # Bloomberg exchange code → Yahoo Finance ticker suffix.
 # Ordered by preference: Xetra first (highest EUR liquidity for EU ETFs),
 # then Euronext Amsterdam, LSE, and the rest.
+# US composite/primary exchanges: Yahoo uses a bare ticker (no suffix).
+_US_CODES = ("US", "UN", "UQ", "UA", "UP", "UR", "UW", "UV")
+
 _EXCH_YAHOO: dict[str, str] = {
     # Xetra variants
     "GR": ".DE", "GF": ".DE", "GD": ".DE", "GS": ".DE",
@@ -138,9 +141,19 @@ _EXCH_YAHOO: dict[str, str] = {
     "NO": ".OL",
     # Copenhagen
     "DC": ".CO",
-    # US composite/primary exchanges: Yahoo uses a bare ticker
-    "US": "", "UN": "", "UQ": "", "UA": "", "UP": "", "UR": "", "UW": "", "UV": "",
+    **dict.fromkeys(_US_CODES, ""),
 }
+
+
+def yahoo_symbol(ticker: str | None, exch_code: str | None) -> str | None:
+    """Ticker + Yahoo suffix for *exch_code*, or None if either is unknown.
+
+    OpenFIGI writes share classes with '/' ('BRK/B'); Yahoo uses '-' ('BRK-B').
+    """
+    suffix = _EXCH_YAHOO.get(exch_code) if exch_code else None
+    if not ticker or suffix is None:
+        return None
+    return f"{ticker.replace('/', '-')}{suffix}"
 
 # Preference order: we pick the first listing whose exch_code is in this list.
 _EXCH_PREFERENCE = [
@@ -155,7 +168,7 @@ _EXCH_PREFERENCE = [
     "SS",         # Stockholm
     # US listings last: EUR-quoted European listings win, but US-only stocks
     # (and US ISINs with no European listing) still resolve.
-    "US", "UN", "UQ", "UA", "UP", "UR", "UW", "UV",
+    *_US_CODES,
 ]
 
 
@@ -182,7 +195,6 @@ async def resolve_yahoo_ticker(isin: str) -> str | None:
 
     for exch in _EXCH_PREFERENCE:
         if exch in by_exch:
-            suffix = _EXCH_YAHOO.get(exch, "")
-            return f"{by_exch[exch]}{suffix}"
+            return yahoo_symbol(by_exch[exch], exch)
 
     return None

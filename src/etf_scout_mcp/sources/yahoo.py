@@ -208,10 +208,19 @@ async def fetch_history(
 # ---------------------------------------------------------------------------
 
 
+class UnknownTicker(Exception):
+    """Yahoo returned an empty `.info` for the symbol. Raised (not returned) so
+    the @cached wrapper never stores it — a transient empty response must not
+    poison the cache for a whole profile TTL."""
+
+
 def _pct(value: Any) -> float | None:
-    """Yahoo ratio fields are fractions (0.276); expose them as percent."""
-    v = _round_money(value)
-    return round(v * 100, 4) if v is not None else None
+    """Yahoo ratio fields are fractions (0.276); expose them as percent.
+    Scales first and rounds once, so small values keep their precision."""
+    try:
+        return round(float(value) * 100, 4)
+    except (TypeError, ValueError):
+        return None
 
 
 def _int(value: Any) -> int | None:
@@ -226,16 +235,20 @@ async def fetch_stock_info(symbol: str) -> dict[str, Any]:
     """Fetch fundamentals for a single stock from Yahoo's full `.info`.
 
     Returns a flat dict keyed like models.StockProfile, plus `quote_type`
-    (e.g. 'EQUITY', 'ETF') so callers can reject non-stocks. A ticker Yahoo
-    doesn't recognise comes back with name=None (yfinance returns a near-empty
-    dict rather than raising). Raises on a hard fetch failure.
+    (e.g. 'EQUITY', 'ETF') so callers can reject non-stocks, and `data_as_of`
+    (the fetch date, preserved across cache hits). Raises UnknownTicker when
+    Yahoo returns no name (yfinance returns a near-empty dict for unknown
+    tickers rather than raising), and on a hard fetch failure — neither is cached.
     """
     def _inner() -> dict[str, Any]:
         t = _ticker(symbol)
         info = _fetch_with_retry(lambda: t.info) or {}
+        if not (info.get("longName") or info.get("shortName")):
+            raise UnknownTicker(symbol)
         dte = _round_money(info.get("debtToEquity"))
         return {
             "symbol": symbol,
+            "data_as_of": date.today().isoformat(),
             "quote_type": info.get("quoteType"),
             "name": info.get("longName") or info.get("shortName"),
             "sector": info.get("sector"),

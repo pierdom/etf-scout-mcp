@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from etf_scout_mcp.sources.openfigi import _EXCH_YAHOO, fetch_listings
+from etf_scout_mcp.sources.openfigi import fetch_listings, yahoo_symbol
 
 
 class EtfListing(BaseModel):
@@ -67,15 +67,13 @@ def register(mcp: FastMCP) -> None:
         for r in deduped[:limit]:
             ticker = r.get("ticker")
             exch_code = r.get("exch_code")
-            suffix = _EXCH_YAHOO.get(exch_code) if exch_code else None
-            yahoo_symbol = f"{ticker}{suffix}" if ticker and suffix is not None else None
             listings.append(
                 EtfListing(
                     figi=r.get("figi"),
                     ticker=ticker,
                     name=r.get("name"),
                     exch_code=exch_code,
-                    yahoo_symbol=yahoo_symbol,
+                    yahoo_symbol=yahoo_symbol(ticker, exch_code),
                     security_type=r.get("security_type"),
                     market_sector=r.get("market_sector"),
                     security_description=r.get("security_description"),

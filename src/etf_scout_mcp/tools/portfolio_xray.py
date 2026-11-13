@@ -85,12 +85,30 @@ def register(mcp: FastMCP) -> None:
 
         countries: dict[str, float] = {}
         sectors: dict[str, float] = {}
-        names: dict[tuple[str, str | None], float] = {}
+        # Keyed by ISIN when present (so an ETF's "Apple Inc" and a direct
+        # "Apple Inc." stake merge), else by lower-cased name. Value: [display name, weight].
+        names: dict[str, list] = {}
+
+        def add_name(name: str, isin: str | None, weight: float) -> None:
+            key = f"isin:{isin}" if isin else f"name:{name.strip().lower()}"
+            entry = names.setdefault(key, [name, isin, 0.0])
+            entry[2] += weight
+
         errors: list[XrayError] = []
         resolved = 0
         stocks_resolved = 0
 
-        for h, profile in zip(holdings, profiles):
+        # Holdings justETF doesn't know are looked up as stocks — concurrently
+        # (each is an OpenFIGI + Yahoo round-trip with retry backoff).
+        misses = [
+            i for i, p in enumerate(profiles) if p is None and not isinstance(p, Exception)
+        ]
+        stock_results = dict(zip(
+            misses,
+            await asyncio.gather(*[fetch_stock(None, holdings[i].isin) for i in misses], return_exceptions=True),
+        ))
+
+        for idx, (h, profile) in enumerate(zip(holdings, profiles)):
             if isinstance(profile, Exception):
                 errors.append(
                     XrayError(isin=h.isin, error=f"Failed to fetch {h.isin!r} from justETF: {profile}")
@@ -100,10 +118,11 @@ def register(mcp: FastMCP) -> None:
             if profile is None:
                 # Not a fund on justETF — treat as an individual stock: 100% in
                 # its own country/sector and a single name at its full weight.
-                stock = await fetch_stock(None, h.isin)
-                if stock.error:
+                stock = stock_results[idx]
+                if isinstance(stock, Exception) or stock.error:
+                    detail = stock if isinstance(stock, Exception) else stock.error
                     errors.append(
-                        XrayError(isin=h.isin, error=f"ISIN {h.isin!r} not found on justETF and not resolvable as a stock: {stock.error}")
+                        XrayError(isin=h.isin, error=f"ISIN {h.isin!r} not found on justETF and not resolvable as a stock: {detail}")
                     )
                     continue
                 resolved += 1
@@ -112,8 +131,7 @@ def register(mcp: FastMCP) -> None:
                     countries[stock.country] = countries.get(stock.country, 0.0) + fund_weight * 100.0
                 if stock.sector:
                     sectors[stock.sector] = sectors.get(stock.sector, 0.0) + fund_weight * 100.0
-                key = (stock.name or stock.symbol, h.isin)
-                names[key] = names.get(key, 0.0) + fund_weight * 100.0
+                add_name(stock.name or stock.symbol, h.isin, fund_weight * 100.0)
                 continue
             resolved += 1
 
@@ -128,8 +146,7 @@ def register(mcp: FastMCP) -> None:
             for hold in profile.get("top_holdings") or []:
                 if hold.get("name") is None or hold.get("weight") is None:
                     continue
-                key = (hold["name"], hold.get("isin"))
-                names[key] = names.get(key, 0.0) + fund_weight * hold["weight"]
+                add_name(hold["name"], hold.get("isin"), fund_weight * hold["weight"])
 
         return PortfolioXray(
             countries=[
@@ -142,7 +159,7 @@ def register(mcp: FastMCP) -> None:
             ],
             top_single_names=[
                 Holding(name=n, isin=isin, weight=round(w, 4))
-                for (n, isin), w in sorted(names.items(), key=lambda kv: -kv[1])[:_MAX_SINGLE_NAMES]
+                for n, isin, w in sorted(names.values(), key=lambda e: -e[2])[:_MAX_SINGLE_NAMES]
             ],
             funds_requested=len(holdings),
             funds_resolved=resolved,

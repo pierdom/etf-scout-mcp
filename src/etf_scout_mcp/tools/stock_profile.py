@@ -11,16 +11,18 @@ from etf_scout_mcp.sources.openfigi import resolve_yahoo_ticker
 
 
 def _stamp(data: dict, source: str, isin: str | None) -> dict:
-    from datetime import date
-
+    """Build StockProfile kwargs. data_as_of comes from the fetcher (the real fetch
+    date, preserved across cache hits) — never stamped with today's date here."""
     row = {k: v for k, v in data.items() if k != "quote_type"}
-    row.update(source=source, isin=isin, data_as_of=date.today().isoformat())
+    row.update(source=source, isin=isin)
     return row
 
 
 async def fetch_stock(symbol: str | None, isin: str | None) -> StockProfile:
     """Resolve + fetch one stock. Never raises for a failed lookup: returns a
     StockProfile with `error` set and all data fields null."""
+    symbol = symbol.strip() if symbol else None
+    isin = isin.strip() if isin else None
     if not symbol and not isin:
         raise ValueError("Provide at least one of: symbol, isin")
 
@@ -40,16 +42,21 @@ async def fetch_stock(symbol: str | None, isin: str | None) -> StockProfile:
     error: str | None = None
     try:
         data = await yahoo.fetch_stock_info(resolved)
-        if data.get("name") is None:
-            error = f"Ticker {resolved!r} was not recognized by Yahoo Finance. Use search_stocks to find it."
-        elif data.get("quote_type") != "EQUITY":
+        if data.get("quote_type") != "EQUITY":
             return StockProfile(
                 symbol=resolved,
                 isin=isin,
                 error=f"{resolved!r} is of type {data.get('quote_type')!r}, not a stock — use get_etf_profile for ETFs.",
             )
-        else:
-            return StockProfile(**_stamp(data, "yahoo", isin))
+        return StockProfile(**_stamp(data, "yahoo", isin))
+    except yahoo.UnknownTicker:
+        # Yahoo answered, it just doesn't know the symbol: don't spend EODHD's
+        # (very small, ~10 calls per fundamentals request) quota on a typo.
+        return StockProfile(
+            symbol=resolved,
+            isin=isin,
+            error=f"Ticker {resolved!r} was not recognized by Yahoo Finance. Use search_stocks to find it.",
+        )
     except Exception as exc:
         error = f"Yahoo Finance request failed for {resolved!r}: {exc}"
 
@@ -65,6 +72,10 @@ async def fetch_stock(symbol: str | None, isin: str | None) -> StockProfile:
             error = f"{error} EODHD fallback also failed: {exc}"
 
     return StockProfile(symbol=resolved, isin=isin, error=error)
+
+
+async def _blank() -> StockProfile:
+    raise ValueError("empty symbol")
 
 
 def register(mcp: FastMCP) -> None:
@@ -109,12 +120,21 @@ def register(mcp: FastMCP) -> None:
         multiples and margins differ structurally across sectors, and money
         fields are in each stock's own currency.
 
-        symbols: e.g. ['AAPL', 'MSFT', 'SAP.DE']. At most 20.
+        symbols: e.g. ['AAPL', 'MSFT', 'SAP.DE']. At most 20. Blank entries
+                 come back as an error row rather than failing the call.
         """
         if not symbols:
             raise ValueError("Provide at least one symbol")
         if len(symbols) > 20:
             raise ValueError("compare_stocks accepts at most 20 symbols per call")
-        rows = await asyncio.gather(*[fetch_stock(s, None) for s in symbols])
+        results = await asyncio.gather(
+            *[fetch_stock(s, None) if s and s.strip() else _blank() for s in symbols],
+            return_exceptions=True,
+        )
+        rows = [
+            r if isinstance(r, StockProfile)
+            else StockProfile(symbol=s, error=f"Lookup failed for {s!r}: {r}")
+            for s, r in zip(symbols, results)
+        ]
         fields = StockSummary.model_fields
         return [StockSummary(**{k: v for k, v in r.model_dump().items() if k in fields}) for r in rows]
