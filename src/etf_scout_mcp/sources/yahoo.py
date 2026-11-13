@@ -201,3 +201,111 @@ async def fetch_history(
         return rows
 
     return await asyncio.to_thread(_inner)
+
+
+# ---------------------------------------------------------------------------
+# Single-stock fundamentals and search
+# ---------------------------------------------------------------------------
+
+
+def _pct(value: Any) -> float | None:
+    """Yahoo ratio fields are fractions (0.276); expose them as percent."""
+    v = _round_money(value)
+    return round(v * 100, 4) if v is not None else None
+
+
+def _int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+@cached(ttl_key="profile")
+async def fetch_stock_info(symbol: str) -> dict[str, Any]:
+    """Fetch fundamentals for a single stock from Yahoo's full `.info`.
+
+    Returns a flat dict keyed like models.StockProfile, plus `quote_type`
+    (e.g. 'EQUITY', 'ETF') so callers can reject non-stocks. A ticker Yahoo
+    doesn't recognise comes back with name=None (yfinance returns a near-empty
+    dict rather than raising). Raises on a hard fetch failure.
+    """
+    def _inner() -> dict[str, Any]:
+        t = _ticker(symbol)
+        info = _fetch_with_retry(lambda: t.info) or {}
+        dte = _round_money(info.get("debtToEquity"))
+        return {
+            "symbol": symbol,
+            "quote_type": info.get("quoteType"),
+            "name": info.get("longName") or info.get("shortName"),
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "country": info.get("country"),
+            "exchange": info.get("exchange"),
+            "currency": info.get("currency"),
+            "financial_currency": info.get("financialCurrency"),
+            "market_cap": _round_money(info.get("marketCap")),
+            "pe_trailing": _round_money(info.get("trailingPE")),
+            "pe_forward": _round_money(info.get("forwardPE")),
+            "price_to_book": _round_money(info.get("priceToBook")),
+            "price_to_sales": _round_money(info.get("priceToSalesTrailing12Months")),
+            "ev_to_ebitda": _round_money(info.get("enterpriseToEbitda")),
+            "eps_trailing": _round_money(info.get("trailingEps")),
+            # Unlike the other ratios, Yahoo's dividendYield is already a percent.
+            "dividend_yield_pct": _round_money(info.get("dividendYield")),
+            "dividend_rate": _round_money(info.get("dividendRate")),
+            "payout_ratio_pct": _pct(info.get("payoutRatio")),
+            "gross_margin_pct": _pct(info.get("grossMargins")),
+            "operating_margin_pct": _pct(info.get("operatingMargins")),
+            "profit_margin_pct": _pct(info.get("profitMargins")),
+            "roe_pct": _pct(info.get("returnOnEquity")),
+            "roa_pct": _pct(info.get("returnOnAssets")),
+            "revenue_growth_pct": _pct(info.get("revenueGrowth")),
+            "earnings_growth_pct": _pct(info.get("earningsGrowth")),
+            # Yahoo reports debt/equity as a percent (84.3); expose a ratio.
+            "debt_to_equity": round(dte / 100, 4) if dte is not None else None,
+            "current_ratio": _round_money(info.get("currentRatio")),
+            "beta": _round_money(info.get("beta")),
+            "fifty_two_week_high": _round_money(info.get("fiftyTwoWeekHigh")),
+            "fifty_two_week_low": _round_money(info.get("fiftyTwoWeekLow")),
+            "description": info.get("longBusinessSummary"),
+            "website": info.get("website"),
+            "employees": _int(info.get("fullTimeEmployees")),
+            "revenue": _round_money(info.get("totalRevenue")),
+            "ebitda": _round_money(info.get("ebitda")),
+            "free_cash_flow": _round_money(info.get("freeCashflow")),
+            "shares_outstanding": _round_money(info.get("sharesOutstanding")),
+            "analyst_target_mean": _round_money(info.get("targetMeanPrice")),
+            "analyst_recommendation": info.get("recommendationKey"),
+            "analyst_count": _int(info.get("numberOfAnalystOpinions")),
+        }
+
+    return await asyncio.to_thread(_inner)
+
+
+@cached(ttl_key="profile")
+async def search_equities(query: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Search Yahoo Finance for listed *equities* matching a name or ticker.
+
+    Non-equity hits (ETFs, futures, funds, crypto) are filtered out. Returns
+    dicts with symbol, name, exchange, sector, industry.
+    """
+    def _inner() -> list[dict[str, Any]]:
+        # Over-fetch: Yahoo mixes in futures/ETFs that are filtered out below.
+        search = _fetch_with_retry(
+            lambda: yf.Search(query, max_results=max(limit * 3, 10), news_count=0, session=_get_session())
+        )
+        rows = []
+        for q in search.quotes:
+            if q.get("quoteType") != "EQUITY" or not q.get("symbol"):
+                continue
+            rows.append({
+                "symbol": q["symbol"],
+                "name": q.get("longname") or q.get("shortname"),
+                "exchange": q.get("exchDisp") or q.get("exchange"),
+                "sector": q.get("sectorDisp") or q.get("sector"),
+                "industry": q.get("industryDisp") or q.get("industry"),
+            })
+        return rows[:limit]
+
+    return await asyncio.to_thread(_inner)

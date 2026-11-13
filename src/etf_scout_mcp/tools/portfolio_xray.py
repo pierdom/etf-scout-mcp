@@ -1,4 +1,4 @@
-"""Tool: portfolio_xray — aggregated look-through exposure across ETF holdings."""
+"""Tool: portfolio_xray — aggregated look-through exposure across ETF and stock holdings."""
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from etf_scout_mcp.models import Allocation, Holding
 from etf_scout_mcp.sources.justetf import fetch_profile
+from etf_scout_mcp.tools.stock_profile import fetch_stock
 
 _MAX_SINGLE_NAMES = 25
 
@@ -37,7 +38,8 @@ class PortfolioXray(BaseModel):
         "in their top 10.",
     )
     funds_requested: int
-    funds_resolved: int
+    funds_resolved: int = Field(description="Holdings resolved, ETFs and individual stocks together")
+    stocks_resolved: int = Field(0, description="How many of funds_resolved were individual stocks (not found on justETF, resolved via Yahoo)")
     errors: list[XrayError] = Field(
         default_factory=list, description="One entry per holding that failed to resolve — never a silent drop"
     )
@@ -60,6 +62,11 @@ def register(mcp: FastMCP) -> None:
         holdings, not its full constituent list, so real single-name concentration may
         be understated — see concentration_approximate (always true today).
 
+        Individual stocks are accepted too: an ISIN justETF doesn't know is looked up
+        as a stock (Yahoo), counted 100% in its own country and sector and as a
+        single name at its full weight. Yahoo's sector labels can differ slightly
+        from justETF's, so the same sector may appear under two names.
+
         holdings: list of {isin, weight}, e.g.
                   [{"isin": "IE00B4L5Y983", "weight": 60}, {"isin": "IE00BK5BQT80", "weight": 40}].
                   Each weight must be >= 0.
@@ -81,6 +88,7 @@ def register(mcp: FastMCP) -> None:
         names: dict[tuple[str, str | None], float] = {}
         errors: list[XrayError] = []
         resolved = 0
+        stocks_resolved = 0
 
         for h, profile in zip(holdings, profiles):
             if isinstance(profile, Exception):
@@ -88,11 +96,26 @@ def register(mcp: FastMCP) -> None:
                     XrayError(isin=h.isin, error=f"Failed to fetch {h.isin!r} from justETF: {profile}")
                 )
                 continue
+            fund_weight = h.weight / total_weight
             if profile is None:
-                errors.append(XrayError(isin=h.isin, error=f"ISIN {h.isin!r} not found on justETF."))
+                # Not a fund on justETF — treat as an individual stock: 100% in
+                # its own country/sector and a single name at its full weight.
+                stock = await fetch_stock(None, h.isin)
+                if stock.error:
+                    errors.append(
+                        XrayError(isin=h.isin, error=f"ISIN {h.isin!r} not found on justETF and not resolvable as a stock: {stock.error}")
+                    )
+                    continue
+                resolved += 1
+                stocks_resolved += 1
+                if stock.country:
+                    countries[stock.country] = countries.get(stock.country, 0.0) + fund_weight * 100.0
+                if stock.sector:
+                    sectors[stock.sector] = sectors.get(stock.sector, 0.0) + fund_weight * 100.0
+                key = (stock.name or stock.symbol, h.isin)
+                names[key] = names.get(key, 0.0) + fund_weight * 100.0
                 continue
             resolved += 1
-            fund_weight = h.weight / total_weight
 
             for c in profile.get("countries") or []:
                 if c.get("name") is None or c.get("weight") is None:
@@ -123,5 +146,6 @@ def register(mcp: FastMCP) -> None:
             ],
             funds_requested=len(holdings),
             funds_resolved=resolved,
+            stocks_resolved=stocks_resolved,
             errors=errors,
         )

@@ -171,7 +171,7 @@ def register(mcp: FastMCP) -> None:
     async def get_quote(
         symbol: str | None = None, isin: str | None = None, include_book: bool = False
     ) -> Quote:
-        """Return the latest price quote for an ETF.
+        """Return the latest price quote for an ETF or an individual stock.
 
         Accepts a Yahoo Finance ticker, an ISIN, or both. When only an ISIN
         is given, the ticker is auto-resolved via OpenFIGI (Xetra preferred,

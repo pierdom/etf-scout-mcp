@@ -2,7 +2,7 @@
 
 Only active when EODHD_API_KEY is set. The free tier allows 20 calls/day and
 1 year of EOD history, so this is a fallback for when Yahoo fails, never a
-primary source. Each fetch_* call costs one API call (cache hits cost none).
+primary source (quotes, history and single-stock fundamentals). Each fetch_* call costs one API call (cache hits cost none).
 """
 from __future__ import annotations
 
@@ -180,3 +180,75 @@ async def fetch_history(symbol: str, period: str = "1y", interval: str = "1d") -
             "volume": int(volume) if volume is not None else None,
         })
     return {"bars": bars, "warning": "; ".join(warnings) or None}
+
+
+def _dig(data: Any, *path: str) -> Any:
+    for key in path:
+        if not isinstance(data, dict):
+            return None
+        data = data.get(key)
+    return data
+
+
+def _pct(value: Any) -> float | None:
+    return _num(value, 100.0)
+
+
+@cached(ttl_key="profile")
+async def fetch_fundamentals(symbol: str) -> dict[str, Any]:
+    """Fetch single-stock fundamentals for an EODHD *symbol* ('AAPL.US', 'SAP.XETRA').
+
+    Returns a flat dict keyed like yahoo.fetch_stock_info (same units: ratios
+    as percent, debt_to_equity unavailable). Costs one API call per symbol
+    (filtered to the four sections used). Raises when EODHD has no such stock.
+    """
+    data = await _get("fetch_fundamentals", f"fundamentals/{symbol}", {"filter": "General,Highlights,Valuation,Technicals"})
+    name = _dig(data, "General", "Name")
+    if not name:
+        raise RuntimeError(f"EODHD has no fundamentals for {symbol!r}")
+    employees = _num(_dig(data, "General", "FullTimeEmployees"))
+    hl = lambda k: _dig(data, "Highlights", k)  # noqa: E731
+    val = lambda k: _dig(data, "Valuation", k)  # noqa: E731
+    return {
+        "symbol": symbol,
+        "quote_type": "EQUITY" if _dig(data, "General", "Type") in (None, "Common Stock", "Preferred Stock") else _dig(data, "General", "Type"),
+        "name": name,
+        "sector": _dig(data, "General", "Sector") or None,
+        "industry": _dig(data, "General", "Industry") or None,
+        "country": _dig(data, "General", "CountryName") or None,
+        "exchange": _dig(data, "General", "Exchange"),
+        "currency": _dig(data, "General", "CurrencyCode"),
+        "financial_currency": None,
+        "market_cap": _num(hl("MarketCapitalization")),
+        "pe_trailing": _num(val("TrailingPE")),
+        "pe_forward": _num(val("ForwardPE")),
+        "price_to_book": _num(val("PriceBookMRQ")),
+        "price_to_sales": _num(val("PriceSalesTTM")),
+        "ev_to_ebitda": _num(val("EnterpriseValueEbitda")),
+        "eps_trailing": _num(hl("EarningsShare")),
+        "dividend_yield_pct": _pct(hl("DividendYield")),
+        "dividend_rate": _num(hl("DividendShare")),
+        "payout_ratio_pct": None,
+        "gross_margin_pct": None,
+        "operating_margin_pct": _pct(hl("OperatingMarginTTM")),
+        "profit_margin_pct": _pct(hl("ProfitMargin")),
+        "roe_pct": _pct(hl("ReturnOnEquityTTM")),
+        "roa_pct": _pct(hl("ReturnOnAssetsTTM")),
+        "revenue_growth_pct": _pct(hl("QuarterlyRevenueGrowthYOY")),
+        "earnings_growth_pct": _pct(hl("QuarterlyEarningsGrowthYOY")),
+        "debt_to_equity": None,
+        "current_ratio": None,
+        "beta": _num(_dig(data, "Technicals", "Beta")),
+        "fifty_two_week_high": _num(_dig(data, "Technicals", "52WeekHigh")),
+        "fifty_two_week_low": _num(_dig(data, "Technicals", "52WeekLow")),
+        "description": _dig(data, "General", "Description"),
+        "website": _dig(data, "General", "WebURL") or None,
+        "employees": int(employees) if employees is not None else None,
+        "revenue": _num(hl("RevenueTTM")),
+        "ebitda": _num(hl("EBITDA")),
+        "free_cash_flow": None,
+        "shares_outstanding": None,
+        "analyst_target_mean": None,
+        "analyst_recommendation": None,
+        "analyst_count": None,
+    }

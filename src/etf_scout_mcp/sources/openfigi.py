@@ -138,6 +138,8 @@ _EXCH_YAHOO: dict[str, str] = {
     "NO": ".OL",
     # Copenhagen
     "DC": ".CO",
+    # US composite/primary exchanges: Yahoo uses a bare ticker
+    "US": "", "UN": "", "UQ": "", "UA": "", "UP": "", "UR": "", "UW": "", "UV": "",
 }
 
 # Preference order: we pick the first listing whose exch_code is in this list.
@@ -151,6 +153,9 @@ _EXCH_PREFERENCE = [
     "SM",         # Madrid
     "BB",         # Brussels
     "SS",         # Stockholm
+    # US listings last: EUR-quoted European listings win, but US-only stocks
+    # (and US ISINs with no European listing) still resolve.
+    "US", "UN", "UQ", "UA", "UP", "UR", "UW", "UV",
 ]
 
 

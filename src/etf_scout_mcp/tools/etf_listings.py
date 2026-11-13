@@ -27,7 +27,7 @@ def register(mcp: FastMCP) -> None:
     async def get_etf_listings(
         isin: str, primary_only: bool = True, limit: int = 20
     ) -> list[EtfListing]:
-        """Return known exchange listings for an ETF identified by ISIN.
+        """Return known exchange listings for an ETF (or stock) identified by ISIN.
 
         Uses the OpenFIGI API (official Bloomberg-backed mapping service) to
         find exchanges where the ETF trades — Xetra, Euronext Amsterdam, LSE,
@@ -41,7 +41,7 @@ def register(mcp: FastMCP) -> None:
 
         Do not use this for price data — use get_quote or get_history instead.
 
-        isin: ISIN of the ETF, e.g. 'IE00B4L5Y983'
+        isin: ISIN of the ETF or stock, e.g. 'IE00B4L5Y983' or 'US0378331005'
         primary_only: When true (default), collapse OpenFIGI's raw response —
                       which includes a row per trade-reporting venue, not just
                       per exchange listing — to one row per real exchange
@@ -68,7 +68,7 @@ def register(mcp: FastMCP) -> None:
             ticker = r.get("ticker")
             exch_code = r.get("exch_code")
             suffix = _EXCH_YAHOO.get(exch_code) if exch_code else None
-            yahoo_symbol = f"{ticker}{suffix}" if ticker and suffix else None
+            yahoo_symbol = f"{ticker}{suffix}" if ticker and suffix is not None else None
             listings.append(
                 EtfListing(
                     figi=r.get("figi"),

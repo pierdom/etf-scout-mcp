@@ -16,6 +16,8 @@ from etf_scout_mcp.tools import (
     portfolio_xray,
     quote,
     search,
+    stock_profile,
+    stock_search,
 )
 
 
@@ -70,7 +72,10 @@ def _make_mcp() -> FastMCP:
 
     return FastMCP(
         name="etf-scout-mcp",
-        instructions="ETF research tools sourced from justETF, Yahoo Finance, and OpenFIGI.",
+        instructions=(
+            "ETF and individual-stock research tools sourced from justETF, Yahoo Finance, "
+            "OpenFIGI and (optionally) EODHD."
+        ),
         auth=auth,
     )
 
@@ -89,6 +94,8 @@ etf_listings.register(mcp)
 portfolio_xray.register(mcp)
 compute_overlap.register(mcp)
 find_alternatives.register(mcp)
+stock_profile.register(mcp)
+stock_search.register(mcp)
 
 
 def main() -> None:

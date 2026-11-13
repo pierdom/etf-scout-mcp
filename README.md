@@ -2,7 +2,7 @@
 
 [![Docker](https://github.com/pierdom/etf-scout-mcp/actions/workflows/docker.yml/badge.svg)](https://github.com/pierdom/etf-scout-mcp/actions/workflows/docker.yml)
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server for ETF research,
+A [Model Context Protocol](https://modelcontextprotocol.io) server for ETF and individual-stock research,
 built for one consumer: an LLM agent. Responses are small, explicitly typed, and never
 fabricate a value to fill a gap — a null price always carries a populated `error`.
 
@@ -36,7 +36,10 @@ that at scale. Don't point it at production traffic or redistribute the scraped 
 | `get_etf_listings` | OpenFIGI | Exchange listings + Yahoo ticker for an ISIN |
 | `get_quote` / `get_quotes` | Yahoo → EODHD → justETF Gettex | Latest price, one or many |
 | `get_history` | Yahoo → EODHD | OHLCV series or computed summary stats |
-| `portfolio_xray` | justETF | Look-through country/sector/single-name exposure across holdings |
+| `search_stocks` | Yahoo | Find a company's ticker by name (equities only) |
+| `get_stock_profile` | Yahoo → EODHD | Single-stock fundamentals: valuation, margins, growth, dividend, analyst consensus |
+| `compare_stocks` | Yahoo → EODHD | Side-by-side fundamentals for up to 20 tickers |
+| `portfolio_xray` | justETF (+ Yahoo for stocks) | Look-through country/sector/single-name exposure across ETF and stock holdings |
 | `compute_overlap` | justETF | Top-10-holdings overlap between two funds |
 | `find_alternatives` | justETF | Funds tracking a similar index, cheapest-first by TER |
 
@@ -71,7 +74,7 @@ scraped, never today's date on a cache hit.
    ```
 5. **Fully quit Claude Desktop (not just close the window) and reopen it** — it does not
    hot-reload this file.
-6. Check the tools/hammer icon in the chat input — it should list 10 tools under
+6. Check the tools/hammer icon in the chat input — it should list 13 tools under
    "etf-scout-mcp". If it doesn't, re-check the two paths in step 4 are absolute and
    exist.
 

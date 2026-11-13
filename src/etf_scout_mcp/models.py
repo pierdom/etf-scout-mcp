@@ -113,3 +113,77 @@ class EtfSummary(BaseModel):
     error: str | None = Field(
         None, description="Set when this ISIN could not be resolved — all other fields are null"
     )
+
+
+class StockSummary(BaseModel):
+    """Lightweight single-stock row returned by get_stock_profile / compare_stocks.
+
+    Conventions differ from ETF models where the source dictates it: money fields
+    are in the stock's own trading/reporting currency (not converted to EUR),
+    ratios such as margins, growth and yield are PERCENT (27.6 = 27.6%).
+    """
+
+    symbol: str = Field(description="Yahoo Finance ticker, e.g. 'AAPL' or 'SAP.DE'")
+    isin: str | None = Field(None, description="Echoed from the request when an ISIN was given; not looked up")
+    name: str | None = None
+    sector: str | None = None
+    industry: str | None = None
+    country: str | None = None
+    exchange: str | None = None
+    currency: str | None = Field(None, description="Trading currency of this listing, e.g. 'USD', 'EUR'")
+    financial_currency: str | None = Field(None, description="Currency of the financial statements (can differ from trading currency)")
+    market_cap: float | None = Field(None, description="Market capitalisation, actual value (not millions), in `currency`")
+
+    pe_trailing: float | None = None
+    pe_forward: float | None = None
+    price_to_book: float | None = None
+    price_to_sales: float | None = None
+    ev_to_ebitda: float | None = None
+    eps_trailing: float | None = None
+
+    dividend_yield_pct: float | None = Field(None, description="Dividend yield in percent (0.3 = 0.3%)")
+    dividend_rate: float | None = Field(None, description="Annual dividend per share, in `currency`")
+    payout_ratio_pct: float | None = Field(None, description="Dividend payout ratio in percent")
+
+    gross_margin_pct: float | None = None
+    operating_margin_pct: float | None = None
+    profit_margin_pct: float | None = None
+    roe_pct: float | None = Field(None, description="Return on equity in percent")
+    roa_pct: float | None = Field(None, description="Return on assets in percent")
+    revenue_growth_pct: float | None = Field(None, description="Year-over-year revenue growth in percent (most recent quarter)")
+    earnings_growth_pct: float | None = Field(None, description="Year-over-year earnings growth in percent (most recent quarter)")
+
+    debt_to_equity: float | None = Field(None, description="Total debt / equity as a ratio (0.84 = 84%)")
+    current_ratio: float | None = None
+    beta: float | None = None
+    fifty_two_week_high: float | None = None
+    fifty_two_week_low: float | None = None
+
+    source: str | None = Field(None, description="'yahoo' or 'eodhd'. Null when the lookup failed.")
+    data_as_of: str | None = Field(None, description="ISO 8601 date this data was fetched")
+    error: str | None = Field(
+        None, description="Set when the stock could not be resolved — all data fields are null"
+    )
+
+
+class StockProfile(StockSummary):
+    """Full single-stock profile: StockSummary plus description and size/analyst fields."""
+
+    description: str | None = None
+    website: str | None = None
+    employees: int | None = None
+    revenue: float | None = Field(None, description="Trailing-12-month revenue in `financial_currency`")
+    ebitda: float | None = Field(None, description="Trailing-12-month EBITDA in `financial_currency`")
+    free_cash_flow: float | None = Field(None, description="Trailing-12-month free cash flow in `financial_currency`")
+    shares_outstanding: float | None = None
+    analyst_target_mean: float | None = Field(None, description="Mean analyst price target, in `currency`")
+    analyst_recommendation: str | None = Field(None, description="Yahoo consensus key, e.g. 'buy', 'hold'")
+    analyst_count: int | None = None
+
+
+class StockSearchResult(BaseModel):
+    symbol: str = Field(description="Yahoo Finance ticker — pass to get_stock_profile / get_quote")
+    name: str | None = None
+    exchange: str | None = None
+    sector: str | None = None
+    industry: str | None = None

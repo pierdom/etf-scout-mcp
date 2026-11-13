@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-`etf-scout-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server for ETF research. It exposes 10 MCP tools backed by three data sources: **justETF** (scraping), **Yahoo Finance** (yfinance + curl_cffi), and **OpenFIGI** (REST API), plus **EODHD** (REST API) as an optional quote/history fallback.
+`etf-scout-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server for ETF research. It exposes 13 MCP tools (ETFs and individual stocks) backed by three data sources: **justETF** (scraping), **Yahoo Finance** (yfinance + curl_cffi), and **OpenFIGI** (REST API), plus **EODHD** (REST API) as an optional quote/history fallback.
 
 ## Commands
 
@@ -53,10 +53,13 @@ src/etf_scout_mcp/
 └── tools/
     ├── etf_profile.py, search.py, etf_compare.py
     ├── quote.py, batch_quote.py, history.py, etf_listings.py
+    ├── stock_profile.py (get_stock_profile + compare_stocks), stock_search.py
     └── portfolio_xray.py, compute_overlap.py, find_alternatives.py
 ```
 
-**The 10 MCP tools:** `get_etf_profile`, `search_etfs`, `compare_etfs`, `get_quote`, `get_quotes`, `get_history`, `get_etf_listings`, `portfolio_xray`, `compute_overlap`, `find_alternatives`.
+**The 13 MCP tools:** `get_etf_profile`, `search_etfs`, `compare_etfs`, `get_quote`, `get_quotes`, `get_history`, `get_etf_listings`, `portfolio_xray`, `compute_overlap`, `find_alternatives`, plus the stock tools `get_stock_profile`, `compare_stocks`, `search_stocks`.
+
+**Stocks:** quote/history/listings are instrument-agnostic (any Yahoo ticker or ISIN). `get_stock_profile` tries Yahoo `.info` → EODHD fundamentals (fewer fields); `portfolio_xray` treats an ISIN unknown to justETF as a stock. Unlike ETF models, stock money fields are in the stock's own currency (not EUR) and ratios are percent. `compute_overlap` and `find_alternatives` remain ETF-only.
 
 **Request flow:** MCP client → `server.py` (tool dispatch) → `tools/` (input validation) → `cache.py` (@cached check) → `sources/` (network fetch) → Pydantic model → client.
 
