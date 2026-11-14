@@ -64,6 +64,11 @@ class Config:
     eodhd_api_key: str | None = field(
         default_factory=lambda: os.getenv("EODHD_API_KEY") or None
     )
+    # Optional Google-Finance-backed source (quote/history/profile fallback, plus
+    # financial statements, stock news and FX); unset disables it entirely.
+    openwebninja_api_key: str | None = field(
+        default_factory=lambda: os.getenv("OPENWEBNINJA_API_KEY") or None
+    )
     # OIDC / remote OAuth (for hosting behind a reverse proxy, e.g. Claude apps).
     # When config_url/client_id/client_secret/base_url are all set, the server exposes a
     # DCR-compliant OAuth interface (FastMCP OIDCProxy) brokered to the upstream IdP.

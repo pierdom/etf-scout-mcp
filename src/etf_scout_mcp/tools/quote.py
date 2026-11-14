@@ -6,7 +6,7 @@ import asyncio
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from etf_scout_mcp.sources import eodhd, yahoo
+from etf_scout_mcp.sources import eodhd, openwebninja, yahoo
 from etf_scout_mcp.sources.openfigi import resolve_yahoo_ticker
 
 
@@ -25,7 +25,7 @@ class Quote(BaseModel):
         description="ISO 8601 date string. Always null when price is null — never fabricated.",
     )
     source: str = Field(
-        description="'yahoo', 'eodhd', 'justetf_gettex', or 'error' (price is null)"
+        description="'yahoo', 'openwebninja', 'eodhd', 'justetf_gettex', or 'error' (price is null)"
     )
     error: str | None = Field(
         None,
@@ -130,6 +130,17 @@ async def fetch_one(symbol: str | None, isin: str | None, include_book: bool = F
                 book = {}  # never fail an otherwise-successful quote over book data
         return Quote(source="yahoo", isin=isin, error=None, **data, **book)  # type: ignore[arg-type]
 
+    # OpenWebNinja (Google Finance) fallback — only when a key is configured.
+    # currency is null on these quotes; symbol stays the Yahoo ticker.
+    google_symbol = openwebninja.to_google_symbol(resolved_symbol) if openwebninja.enabled() else None
+    if google_symbol:
+        try:
+            own_data = await openwebninja.fetch_quote(google_symbol)
+            own_data["symbol"] = resolved_symbol
+            return Quote(source="openwebninja", isin=isin, error=None, **own_data)
+        except Exception as own_exc:
+            yahoo_error = f"{yahoo_error} OpenWebNinja fallback also failed: {own_exc}"
+
     # EODHD fallback — delayed quote, only when a key is configured. symbol
     # stays the Yahoo ticker so callers can pass it on to other tools.
     eodhd_symbol = eodhd.to_eodhd_symbol(resolved_symbol) if eodhd.enabled() else None
@@ -176,6 +187,8 @@ def register(mcp: FastMCP) -> None:
         Accepts a Yahoo Finance ticker, an ISIN, or both. When only an ISIN
         is given, the ticker is auto-resolved via OpenFIGI (Xetra preferred,
         then Euronext Amsterdam, LSE, etc.). If Yahoo fails, falls back to
+        OpenWebNinja/Google Finance (only when the server has an
+        OPENWEBNINJA_API_KEY; currency is null), then to
         EODHD (~15 min delayed, only when the server has an EODHD key;
         currency is null on EODHD quotes), then to the justETF Gettex live
         quote (EUR, European hours only).

@@ -8,7 +8,7 @@ from datetime import date
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-from etf_scout_mcp.sources import eodhd, yahoo
+from etf_scout_mcp.sources import eodhd, openwebninja, yahoo
 from etf_scout_mcp.sources.openfigi import resolve_yahoo_ticker
 
 # yfinance's documented period/interval vocabularies. Interval is deliberately
@@ -49,7 +49,7 @@ class HistoryResult(BaseModel):
     )
     source: str = Field(
         "yahoo",
-        description="'yahoo', or 'eodhd' when Yahoo failed and the server has an EODHD key.",
+        description="'yahoo', or 'openwebninja'/'eodhd' when Yahoo failed and the server has that key.",
     )
     note: str | None = Field(
         None,
@@ -69,7 +69,7 @@ class HistorySummary(BaseModel):
     )
     source: str = Field(
         "yahoo",
-        description="'yahoo', or 'eodhd' when Yahoo failed and the server has an EODHD key.",
+        description="'yahoo', or 'openwebninja'/'eodhd' when Yahoo failed and the server has that key.",
     )
     note: str | None = Field(
         None,
@@ -175,10 +175,10 @@ def _compute_summary(bars: list[dict]) -> dict:
 
 
 async def _fetch_rows(symbol: str, period: str, interval: str) -> tuple[list[dict], str, str | None]:
-    """Fetch bars from Yahoo; on a failure or an empty series, retry on EODHD
-    when a key is configured. Returns (rows, source, note).
+    """Fetch bars from Yahoo; on a failure or an empty series, retry on
+    OpenWebNinja then EODHD when keys are configured. Returns (rows, source, note).
 
-    Without a usable EODHD result, Yahoo's own outcome stands: its exception
+    Without a usable fallback result, Yahoo's own outcome stands: its exception
     is re-raised, or its empty series returned.
     """
     yahoo_exc: Exception | None = None
@@ -189,15 +189,31 @@ async def _fetch_rows(symbol: str, period: str, interval: str) -> tuple[list[dic
     except Exception as exc:
         yahoo_exc = exc
 
+    fallback_errors: list[str] = []
+
+    google_symbol = openwebninja.to_google_symbol(symbol) if openwebninja.enabled() else None
+    if google_symbol:
+        try:
+            data = await openwebninja.fetch_history(google_symbol, period=period)
+        except Exception as own_exc:
+            fallback_errors.append(f"OpenWebNinja fallback also failed: {own_exc}")
+        else:
+            rows = openwebninja.resample(data["bars"], interval)
+            if rows:
+                note = data["warning"]
+                if interval == "1d" and _infer_interval([r["date"] for r in rows]) != "1d":
+                    note += f" Returned bars are coarser than the requested '1d' for period {period!r}."
+                return rows, "openwebninja", note
+
     eodhd_symbol = eodhd.to_eodhd_symbol(symbol) if eodhd.enabled() else None
     if eodhd_symbol:
         try:
             data = await eodhd.fetch_history(eodhd_symbol, period=period, interval=interval)
         except Exception as eodhd_exc:
+            fallback_errors.append(f"EODHD fallback also failed: {eodhd_exc}")
             if yahoo_exc is not None:
                 raise RuntimeError(
-                    f"Yahoo Finance failed for {symbol!r} ({yahoo_exc}); "
-                    f"EODHD fallback also failed: {eodhd_exc}"
+                    f"Yahoo Finance failed for {symbol!r} ({yahoo_exc}); " + "; ".join(fallback_errors)
                 ) from yahoo_exc
         else:
             if data["bars"]:
@@ -237,8 +253,10 @@ def register(mcp: FastMCP) -> None:
         Accepts a Yahoo Finance ticker, an ISIN, or both. When only an ISIN
         is given, the ticker is auto-resolved via OpenFIGI (Xetra preferred,
         then Euronext Amsterdam, LSE, etc.). If Yahoo fails and the server
-        has an EODHD key, falls back to EODHD (source='eodhd'; free tier
-        serves only the last year, reported in `note`).
+        has an OPENWEBNINJA_API_KEY, falls back to it (source='openwebninja';
+        close and volume only — open/high/low are null — and bars coarser than
+        daily beyond 1y, reported in `note`); then to EODHD (source='eodhd';
+        free tier serves only the last year, reported in `note`).
 
         Use this to chart performance or compute custom metrics over time.
         Use get_quote for the latest price only.

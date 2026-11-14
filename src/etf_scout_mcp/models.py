@@ -159,7 +159,7 @@ class StockSummary(BaseModel):
     fifty_two_week_high: float | None = None
     fifty_two_week_low: float | None = None
 
-    source: str | None = Field(None, description="'yahoo' or 'eodhd'. Null when the lookup failed.")
+    source: str | None = Field(None, description="'yahoo', 'openwebninja' or 'eodhd'. Null when the lookup failed.")
     data_as_of: str | None = Field(None, description="ISO 8601 date this data was fetched")
     error: str | None = Field(
         None, description="Set when the stock could not be resolved — all data fields are null"

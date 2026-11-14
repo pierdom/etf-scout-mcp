@@ -6,7 +6,7 @@ import asyncio
 from fastmcp import FastMCP
 
 from etf_scout_mcp.models import StockProfile, StockSummary
-from etf_scout_mcp.sources import eodhd, yahoo
+from etf_scout_mcp.sources import eodhd, openwebninja, yahoo
 from etf_scout_mcp.sources.openfigi import resolve_yahoo_ticker
 
 
@@ -60,6 +60,17 @@ async def fetch_stock(symbol: str | None, isin: str | None) -> StockProfile:
     except Exception as exc:
         error = f"Yahoo Finance request failed for {resolved!r}: {exc}"
 
+    google_symbol = openwebninja.to_google_symbol(resolved) if openwebninja.enabled() else None
+    if google_symbol:
+        try:
+            data = await openwebninja.fetch_overview(google_symbol)
+            if data.get("quote_type") == "EQUITY":
+                data["symbol"] = resolved
+                return StockProfile(**_stamp(data, "openwebninja", isin))
+            error = f"{error} OpenWebNinja classifies {google_symbol!r} as {data.get('quote_type')}, not a stock."
+        except Exception as exc:
+            error = f"{error} OpenWebNinja fallback also failed: {exc}"
+
     eodhd_symbol = eodhd.to_eodhd_symbol(resolved) if eodhd.enabled() else None
     if eodhd_symbol:
         try:
@@ -86,8 +97,8 @@ def register(mcp: FastMCP) -> None:
         Valuation (P/E, P/B, P/S, EV/EBITDA), profitability (margins, ROE/ROA),
         growth, dividend yield/payout, balance-sheet ratios, beta, 52-week range,
         sector/industry/country, business description and analyst consensus.
-        Sourced from Yahoo Finance; falls back to EODHD (fewer fields) when
-        Yahoo fails and the server has an EODHD key.
+        Sourced from Yahoo Finance; falls back to OpenWebNinja, then EODHD (both
+        with fewer fields), when Yahoo fails and the server has that key.
 
         Units: ratios such as margins, growth, ROE and yield are PERCENT
         (27.6 = 27.6%). Money is in the stock's own currency — NOT converted

@@ -59,3 +59,5 @@ def _no_eodhd(monkeypatch):
     from etf_scout_mcp.config import config
 
     monkeypatch.setattr(config, "eodhd_api_key", None)
+    # Same for OpenWebNinja: a developer's real key must never cause live calls.
+    monkeypatch.setattr(config, "openwebninja_api_key", None)
